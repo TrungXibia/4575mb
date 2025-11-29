@@ -578,14 +578,15 @@ else:
             else:
                 row.append("")
             
-            # Sót K1-K7: Bridge N2-N1 and subtract K1 to K7
+            # Sót K1-K7: Bridge N2-N1 and subtract K1 to K7 (shifted down by 1 row)
             if i + 2 < len(processed):
                 l0_prev1 = processed[i + 1]["list0"]
                 l0_prev2 = processed[i + 2]["list0"]
                 current_dan = bridge_ab(l0_prev2, l0_prev1)
                 
                 for k in range(7):
-                    target_idx = i - k
+                    # K1 uses i+1, K2 uses i, K3 uses i-1, etc. (shifted down)
+                    target_idx = i + 1 - k
                     if target_idx < 0:
                         row.append("")
                     else:
