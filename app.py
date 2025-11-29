@@ -121,9 +121,17 @@ def http_get_issue_list(url: str, timeout: int = 10):
     try:
         resp = SESSION.get(url, headers=HEADERS, timeout=timeout)
         resp.raise_for_status()
-        return resp.json().get("t", {}).get("issueList", [])
+        data = resp.json().get("t", {})
+        issue_list = data.get("issueList", [])
+        
+        # Lấy thời gian từ kỳ mới nhất
+        latest_time = ""
+        if issue_list:
+            latest_time = issue_list[0].get('openTime', '')
+            
+        return issue_list, latest_time
     except Exception:
-        return []
+        return [], ""
 
 def get_current_day_vietnamese():
     return DAYS_OF_WEEK[datetime.now().weekday()]
@@ -136,7 +144,7 @@ def load_data(station_name):
     url = DAI_API.get(api_key)
     if url:
         return http_get_issue_list(url)
-    return []
+    return [], ""
 
 # =============================================================================
 # STREAMLIT APP
@@ -214,8 +222,13 @@ st.markdown("""
 # Initialize session state
 if 'raw_data' not in st.session_state:
     st.session_state.raw_data = []
+    st.session_state.last_open_time = ""
+    st.session_state.current_station = ""
     # Auto load Miền Bắc on first run
-    st.session_state.raw_data = load_data("Miền Bắc")
+    data, time = load_data("Miền Bắc")
+    st.session_state.raw_data = data
+    st.session_state.last_open_time = time
+    st.session_state.current_station = "Miền Bắc"
 
 if 'selected_giai' not in st.session_state:
     st.session_state.selected_giai = [2, 3]  # Default: G2-1, G2-2
@@ -226,7 +239,7 @@ if 'selected_giai' not in st.session_state:
 
 st.markdown("#### 🛠️ CẤU HÌNH & DỮ LIỆU")
 
-col1, col2, col3, col4 = st.columns([1.5, 1.5, 3, 1.5])
+col1, col2, col3, col4 = st.columns([1.5, 1.5, 3, 3])
 
 with col1:
     region = st.selectbox("Khu vực", ["Miền Bắc", "Miền Nam", "Miền Trung"], index=0, label_visibility="collapsed")
@@ -257,14 +270,34 @@ with col3:
         station = st.selectbox("Đài", ["Không có lịch quay"], disabled=True, label_visibility="collapsed")
 
 with col4:
+    # Auto load logic: Check if station changed
+    if station and station != "Không có lịch quay":
+        if station != st.session_state.get('current_station'):
+            with st.spinner(f"Đang tải {station}..."):
+                data, time = load_data(station)
+                st.session_state.raw_data = data
+                st.session_state.last_open_time = time
+                st.session_state.current_station = station
+                st.rerun()
+
+    # Manual Reload Button
     if st.button("🔄 TẢI LẠI", type="primary", use_container_width=True):
         if station and station != "Không có lịch quay":
-            with st.spinner(f"Loading..."):
-                data = load_data(station)
-                if data:
-                    st.session_state.raw_data = data
-                else:
-                    st.error("Lỗi!")
+            with st.spinner(f"Đang tải {station}..."):
+                data, time = load_data(station)
+                st.session_state.raw_data = data
+                st.session_state.last_open_time = time
+                st.session_state.current_station = station
+                st.rerun()
+
+    # Display Time
+    now_str = datetime.now().strftime("%H:%M:%S %d/%m/%Y")
+    st.markdown(f"""
+    <div style="display: flex; align-items: center; justify-content: space-between; height: 100%; font-size: 13px; color: #31333F; margin-top: 5px;">
+        <span>📅 Kỳ: <b>{st.session_state.last_open_time}</b></span>
+        <span>🕒 <b>{now_str}</b></span>
+    </div>
+    """, unsafe_allow_html=True)
 
 # Prize Selection
 with st.expander("🎯 CHỌN GIẢI ĐỂ PHÂN TÍCH", expanded=True):
@@ -433,7 +466,7 @@ else:
         
         styled_df = df_anal.style.apply(highlight_cols)
         
-        # Configure columns for compactness
+        # Configure columns for compactness (Force pixel width)
         anal_config = {
             "Kỳ": st.column_config.TextColumn("Kỳ", width=70),
             "List 0 (Thiếu)": st.column_config.TextColumn("List 0 (Thiếu)", width=80),
