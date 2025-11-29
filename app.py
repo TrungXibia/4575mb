@@ -97,6 +97,8 @@ GIAI_LABELS_MB = [
     "G7-1", "G7-2", "G7-3", "G7-4"
 ]
 
+DAYS_OF_WEEK = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"]
+
 # =============================================================================
 # NETWORK UTILS
 # =============================================================================
@@ -124,8 +126,17 @@ def http_get_issue_list(url: str, timeout: int = 10):
         return []
 
 def get_current_day_vietnamese():
-    days = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"]
-    return days[datetime.now().weekday()]
+    return DAYS_OF_WEEK[datetime.now().weekday()]
+
+def load_data(station_name):
+    api_key = station_name
+    if "Miền Bắc" in station_name and "45s" not in station_name and "75s" not in station_name:
+        api_key = "Miền Bắc"
+    
+    url = DAI_API.get(api_key)
+    if url:
+        return http_get_issue_list(url)
+    return []
 
 # =============================================================================
 # STREAMLIT APP
@@ -136,7 +147,7 @@ st.set_page_config(page_title="Phần Mềm Soi Cầu 3 Miền", layout="wide")
 st.markdown("""
 <style>
     .main > div {
-        padding-top: 2rem;
+        padding-top: 1rem;
     }
     .stDataFrame {
         font-size: 12px;
@@ -146,120 +157,116 @@ st.markdown("""
     }
     .block-container {
         padding-top: 1rem;
+        padding-bottom: 1rem;
+    }
+    /* Compact header */
+    div[data-testid="stVerticalBlock"] > div:has(div[data-testid="stHorizontalBlock"]) {
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid #dee2e6;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Title
-st.title("🎰 Phần Mềm Soi Cầu Đa Năng 3 Miền - Pro Version")
-
 # Initialize session state
 if 'raw_data' not in st.session_state:
     st.session_state.raw_data = []
+    # Auto load Miền Bắc on first run
+    st.session_state.raw_data = load_data("Miền Bắc")
+
 if 'selected_giai' not in st.session_state:
     st.session_state.selected_giai = [2, 3]  # Default: G2-1, G2-2
 
 # =============================================================================
-# SIDEBAR - Controls
+# TOP CONTROLS
 # =============================================================================
 
-with st.sidebar:
-    st.header("⚙️ KHU VỰC & ĐÀI")
-    
-    region = st.selectbox("Chọn Khu Vực:", ["Miền Bắc", "Miền Nam", "Miền Trung"], index=0)
-    
-    today_str = get_current_day_vietnamese()
-    use_today_filter = st.checkbox("Lịch hôm nay", value=True)
-    
-    # Get stations based on region
+st.subheader("🛠️ CẤU HÌNH & DỮ LIỆU")
+
+col1, col2, col3, col4 = st.columns([1.5, 1.5, 3, 1.5])
+
+with col1:
+    region = st.selectbox("Khu vực", ["Miền Bắc", "Miền Nam", "Miền Trung"], index=0)
+
+with col2:
+    # Default to current day
+    current_day = get_current_day_vietnamese()
+    try:
+        default_day_idx = DAYS_OF_WEEK.index(current_day)
+    except:
+        default_day_idx = 0
+    selected_day = st.selectbox("Thứ", DAYS_OF_WEEK, index=default_day_idx)
+
+with col3:
+    # Get stations based on region and selected day
     stations = []
     if region == "Miền Bắc":
-        lbl_tinh = LICH_QUAY_BAC.get(today_str, "")
+        lbl_tinh = LICH_QUAY_BAC.get(selected_day, "")
         stations = [f"Miền Bắc ({lbl_tinh})", "Miền Bắc 75s", "Miền Bắc 45s"]
     elif region == "Miền Nam":
-        if use_today_filter:
-            stations = LICH_QUAY_NAM.get(today_str, [])
-        else:
-            s = set()
-            for lst in LICH_QUAY_NAM.values():
-                s.update(lst)
-            stations = sorted(list(s))
+        stations = LICH_QUAY_NAM.get(selected_day, [])
     elif region == "Miền Trung":
-        if use_today_filter:
-            stations = LICH_QUAY_TRUNG.get(today_str, [])
-        else:
-            s = set()
-            for lst in LICH_QUAY_TRUNG.values():
-                s.update(lst)
-            stations = sorted(list(s))
+        stations = LICH_QUAY_TRUNG.get(selected_day, [])
     
     if stations:
-        station = st.selectbox("Chọn Đài:", stations, index=0)
+        station = st.selectbox("Đài", stations, index=0)
     else:
-        st.warning(f"Không có lịch quay {region} hôm nay")
-        station = None
-    
-    st.markdown("---")
-    
-    # Prize selection
-    st.subheader("🎯 CHỌN GIẢI ĐỂ PHÂN TÍCH")
-    st.caption("(Và hiển thị cột)")
-    
+        station = st.selectbox("Đài", ["Không có lịch quay"], disabled=True)
+
+with col4:
+    st.write("") # Spacer
+    st.write("") # Spacer
+    if st.button("🔄 TẢI LẠI", type="primary", use_container_width=True):
+        if station and station != "Không có lịch quay":
+            with st.spinner(f"Đang tải: {station}..."):
+                data = load_data(station)
+                if data:
+                    st.session_state.raw_data = data
+                    st.success(f"Đã tải {len(data)} kỳ")
+                else:
+                    st.error("Lỗi tải dữ liệu!")
+
+# Prize Selection (Expandable or just visible)
+with st.expander("🎯 CHỌN GIẢI ĐỂ PHÂN TÍCH (Và hiển thị cột)", expanded=True):
     # Create checkboxes in columns
-    num_cols = 3
+    num_cols = 8
     giai_selected = []
+    cols = st.columns(num_cols)
     
-    for start_idx in range(0, len(GIAI_LABELS_MB), num_cols):
-        cols = st.columns(num_cols)
-        for i, col in enumerate(cols):
-            idx = start_idx + i
-            if idx < len(GIAI_LABELS_MB):
-                with col:
-                    default_val = idx in st.session_state.selected_giai
-                    if st.checkbox(GIAI_LABELS_MB[idx], value=default_val, key=f"giai_{idx}"):
-                        giai_selected.append(idx)
+    for i, label in enumerate(GIAI_LABELS_MB):
+        if i == 0: continue # Skip ĐB
+        
+        col_idx = (i-1) % num_cols
+        with cols[col_idx]:
+            default_val = i in st.session_state.selected_giai
+            if st.checkbox(label, value=default_val, key=f"giai_{i}"):
+                giai_selected.append(i)
     
     st.session_state.selected_giai = giai_selected
-    
-    st.markdown("---")
-    
-    # Load button
-    if st.button("🔄 TẢI LẠI", type="primary", use_container_width=True):
-        if station:
-            api_key = station
-            if "Miền Bắc" in station and "45s" not in station and "75s" not in station:
-                api_key = "Miền Bắc"
-            
-            url = DAI_API.get(api_key)
-            if url:
-                with st.spinner(f"Đang tải: {station}..."):
-                    st.session_state.raw_data = http_get_issue_list(url)
-                    if st.session_state.raw_data:
-                        st.success(f"✅ Đã tải: {station} ({len(st.session_state.raw_data)} kỳ)")
-                    else:
-                        st.error("❌ Lỗi tải dữ liệu!")
+
+st.markdown("---")
 
 # =============================================================================
 # MAIN CONTENT
 # =============================================================================
 
 if not st.session_state.raw_data:
-    st.info("👆 Vui lòng chọn khu vực, đài và bấm **TẢI LẠI** để bắt đầu")
+    st.info("Không có dữ liệu. Vui lòng kiểm tra kết nối hoặc chọn đài khác.")
 else:
     # Create two columns
     col_left, col_right = st.columns([1, 2])
     
     with col_left:
-        st.subheader("📊 KẾT QUẢ CÁC KỲ")
+        st.markdown("### 📊 KẾT QUẢ")
         
         # Build result table
         display_indices = [0]  # Always include ĐB
         headers = ["Kỳ", "ĐB"]
         
         for i in st.session_state.selected_giai:
-            if i != 0:  # Skip ĐB as it's already added
-                display_indices.append(i)
-                headers.append(GIAI_LABELS_MB[i])
+            display_indices.append(i)
+            headers.append(GIAI_LABELS_MB[i])
         
         rows_res = []
         for item in st.session_state.raw_data:
@@ -277,10 +284,10 @@ else:
             rows_res.append(row)
         
         df_res = pd.DataFrame(rows_res, columns=headers)
-        st.dataframe(df_res, height=600, use_container_width=True)
+        st.dataframe(df_res, height=600, use_container_width=True, hide_index=True)
     
     with col_right:
-        st.subheader("📈 PHÂN TÍCH LIST 0 & SÓT K1-K7")
+        st.markdown("### 📈 PHÂN TÍCH LIST 0 & SÓT K1-K7")
         
         # Process data for analysis
         processed = []
@@ -360,4 +367,4 @@ else:
                 return [''] * len(s)
         
         styled_df = df_anal.style.apply(highlight_cols)
-        st.dataframe(styled_df, height=600, use_container_width=True)
+        st.dataframe(styled_df, height=600, use_container_width=True, hide_index=True)
