@@ -144,31 +144,69 @@ def load_data(station_name):
 
 st.set_page_config(page_title="Phần Mềm Soi Cầu 3 Miền", layout="wide")
 
+# CSS for Compact UI
 st.markdown("""
 <style>
-    .main > div {
-        padding-top: 1rem;
+    /* Compact Layout */
+    .block-container {
+        padding-top: 0.5rem !important;
+        padding-bottom: 0rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+        max-width: 100% !important;
     }
-    .stDataFrame {
+    
+    /* Reduce font sizes */
+    html, body, [class*="css"] {
         font-size: 12px;
     }
-    h1, h2, h3 {
-        color: #ff4b4b;
+    p, .stMarkdown, .stText {
+        font-size: 13px !important;
+        margin-bottom: 0px !important;
     }
-    .block-container {
-        padding-top: 1rem;
-        padding-bottom: 1rem;
+    
+    /* Compact Controls */
+    div[data-testid="stVerticalBlock"] > div {
+        gap: 0.2rem !important;
     }
-    /* Compact header */
-    div[data-testid="stVerticalBlock"] > div:has(div[data-testid="stHorizontalBlock"]) {
-        background-color: #262730;
-        padding: 15px;
-        border-radius: 10px;
-        border: 1px solid #464b5c;
+    
+    /* Compact Dataframe */
+    .stDataFrame {
+        font-size: 11px !important;
     }
-    /* Checkbox spacing */
+    
+    /* Headers */
+    h1, h2, h3, h4, h5 {
+        margin-bottom: 0.2rem !important;
+        padding-top: 0 !important;
+        color: #ff4b4b !important;
+    }
+    
+    /* Expander */
+    .streamlit-expanderHeader {
+        font-size: 13px !important;
+        padding: 0.2rem 0.5rem !important;
+        background-color: #f8f9fa !important;
+        border: 1px solid #dee2e6 !important;
+        color: #31333F !important;
+    }
+    
+    /* Buttons */
+    button {
+        height: auto !important;
+        padding-top: 0.2rem !important;
+        padding-bottom: 0.2rem !important;
+    }
+    
+    /* Checkboxes */
     div[data-testid="stCheckbox"] {
-        margin-bottom: 5px;
+        min-height: 1rem !important;
+        margin-top: -8px !important;
+        margin-bottom: -8px !important;
+    }
+    div[data-testid="stCheckbox"] label {
+        font-size: 11px !important;
+        padding-left: 0.2rem !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -186,12 +224,12 @@ if 'selected_giai' not in st.session_state:
 # TOP CONTROLS
 # =============================================================================
 
-st.subheader("🛠️ CẤU HÌNH & DỮ LIỆU")
+st.markdown("#### 🛠️ CẤU HÌNH & DỮ LIỆU")
 
 col1, col2, col3, col4 = st.columns([1.5, 1.5, 3, 1.5])
 
 with col1:
-    region = st.selectbox("Khu vực", ["Miền Bắc", "Miền Nam", "Miền Trung"], index=0)
+    region = st.selectbox("Khu vực", ["Miền Bắc", "Miền Nam", "Miền Trung"], index=0, label_visibility="collapsed")
 
 with col2:
     # Default to current day
@@ -200,7 +238,7 @@ with col2:
         default_day_idx = DAYS_OF_WEEK.index(current_day)
     except:
         default_day_idx = 0
-    selected_day = st.selectbox("Thứ", DAYS_OF_WEEK, index=default_day_idx)
+    selected_day = st.selectbox("Thứ", DAYS_OF_WEEK, index=default_day_idx, label_visibility="collapsed")
 
 with col3:
     # Get stations based on region and selected day
@@ -214,29 +252,26 @@ with col3:
         stations = LICH_QUAY_TRUNG.get(selected_day, [])
     
     if stations:
-        station = st.selectbox("Đài", stations, index=0)
+        station = st.selectbox("Đài", stations, index=0, label_visibility="collapsed")
     else:
-        station = st.selectbox("Đài", ["Không có lịch quay"], disabled=True)
+        station = st.selectbox("Đài", ["Không có lịch quay"], disabled=True, label_visibility="collapsed")
 
 with col4:
-    st.write("") # Spacer
-    st.write("") # Spacer
     if st.button("🔄 TẢI LẠI", type="primary", use_container_width=True):
         if station and station != "Không có lịch quay":
-            with st.spinner(f"Đang tải: {station}..."):
+            with st.spinner(f"Loading..."):
                 data = load_data(station)
                 if data:
                     st.session_state.raw_data = data
-                    st.success(f"Đã tải {len(data)} kỳ")
                 else:
-                    st.error("Lỗi tải dữ liệu!")
+                    st.error("Lỗi!")
 
 # Prize Selection
-with st.expander("🎯 CHỌN GIẢI ĐỂ PHÂN TÍCH (Và hiển thị cột)", expanded=True):
+with st.expander("🎯 CHỌN GIẢI ĐỂ PHÂN TÍCH", expanded=True):
     # Control buttons
-    c1, c2, c3 = st.columns([1, 1, 6])
+    c1, c2, c3 = st.columns([1, 1, 8])
     with c1:
-        if st.button("Chọn tất cả"):
+        if st.button("Chọn hết"):
             st.session_state.selected_giai = list(range(1, len(GIAI_LABELS_MB)))
             st.rerun()
     with c2:
@@ -244,10 +279,8 @@ with st.expander("🎯 CHỌN GIẢI ĐỂ PHÂN TÍCH (Và hiển thị cột)"
             st.session_state.selected_giai = []
             st.rerun()
             
-    st.write("")
-    
-    # Create checkboxes in columns (Reduced to 6 columns for better visibility)
-    num_cols = 6
+    # Create checkboxes in columns (9 columns)
+    num_cols = 9
     giai_selected = []
     cols = st.columns(num_cols)
     
@@ -269,13 +302,13 @@ st.markdown("---")
 # =============================================================================
 
 if not st.session_state.raw_data:
-    st.info("Không có dữ liệu. Vui lòng kiểm tra kết nối hoặc chọn đài khác.")
+    st.info("Chưa có dữ liệu.")
 else:
-    # Create two columns
-    col_left, col_right = st.columns([1, 2])
+    # Create two columns (Adjust ratio to make left side smaller)
+    col_left, col_right = st.columns([2.5, 5.5])
     
     with col_left:
-        st.markdown("### 📊 KẾT QUẢ")
+        st.markdown("##### 📊 KẾT QUẢ")
         
         # Build result table
         display_indices = [0]  # Always include ĐB
@@ -301,10 +334,25 @@ else:
             rows_res.append(row)
         
         df_res = pd.DataFrame(rows_res, columns=headers)
-        st.dataframe(df_res, height=600, use_container_width=True, hide_index=True)
+        
+        # Configure columns for compactness (Force pixel width)
+        column_config = {
+            "Kỳ": st.column_config.TextColumn("Kỳ", width=70),
+            "ĐB": st.column_config.TextColumn("ĐB", width=50),
+        }
+        for h in headers[2:]:
+             column_config[h] = st.column_config.TextColumn(h, width=50)
+
+        st.dataframe(
+            df_res, 
+            height=700, 
+            use_container_width=True, 
+            hide_index=True,
+            column_config=column_config
+        )
     
     with col_right:
-        st.markdown("### 📈 PHÂN TÍCH LIST 0 & SÓT K1-K7")
+        st.markdown("##### 📈 PHÂN TÍCH LIST 0 & SÓT K1-K7")
         
         # Process data for analysis
         processed = []
@@ -384,4 +432,20 @@ else:
                 return [''] * len(s)
         
         styled_df = df_anal.style.apply(highlight_cols)
-        st.dataframe(styled_df, height=600, use_container_width=True, hide_index=True)
+        
+        # Configure columns for compactness
+        anal_config = {
+            "Kỳ": st.column_config.TextColumn("Kỳ", width=70),
+            "List 0 (Thiếu)": st.column_config.TextColumn("List 0 (Thiếu)", width=80),
+            "Sót K1 (Nay)": st.column_config.TextColumn("Sót K1 (Nay)", width=70),
+        }
+        for k in range(2, 8):
+             anal_config[f"Sót K{k}"] = st.column_config.TextColumn(f"Sót K{k}", width=70)
+
+        st.dataframe(
+            styled_df, 
+            height=700, 
+            use_container_width=True, 
+            hide_index=True,
+            column_config=anal_config
+        )
