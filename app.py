@@ -578,15 +578,17 @@ else:
             else:
                 row.append("")
             
-            # Sót K1-K7: Bridge N2-N1 and subtract K1 to K7 (shifted down by 1 row)
-            if i + 2 < len(processed):
-                l0_prev1 = processed[i + 1]["list0"]
-                l0_prev2 = processed[i + 2]["list0"]
+            # Sót K1-K7: Display data from previous row (shifted down)
+            # Row i shows K1-K7 calculated for row i-1
+            if i > 0 and i + 1 < len(processed):
+                # Use data from previous row (i-1)
+                l0_prev1 = processed[i]["list0"]      # N1 for row i-1
+                l0_prev2 = processed[i + 1]["list0"]  # N2 for row i-1
                 current_dan = bridge_ab(l0_prev2, l0_prev1)
                 
                 for k in range(7):
-                    # K1 uses i+1, K2 uses i, K3 uses i-1, etc. (shifted down)
-                    target_idx = i + 1 - k
+                    # K1 uses i, K2 uses i-1, K3 uses i-2, etc.
+                    target_idx = i - k
                     if target_idx < 0:
                         row.append("")
                     else:
