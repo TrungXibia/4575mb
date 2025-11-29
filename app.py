@@ -605,14 +605,25 @@ else:
         
         # Apply styling
         def highlight_cols(s):
-            if s.name == "List 0 (Thiếu)":
-                return ['background-color: #ffebee; color: #c0392b'] * len(s)
-            elif s.name == "Sót K0 (N1-N0)":
-                return ['background-color: #fff3e0; color: #e67e22'] * len(s)  # Orange
-            elif s.name == "Sót K1 (Nay)":
-                return ['background-color: #e8f8f5; color: #16a085'] * len(s)  # Green
-            else:
-                return [''] * len(s)
+            styles = []
+            for val in s:
+                if s.name == "List 0 (Thiếu)":
+                    styles.append('background-color: #ffebee; color: #c0392b')
+                elif s.name == "Sót K0 (N1-N0)":
+                    # Only highlight if cell has value
+                    if val and str(val).strip():
+                        styles.append('background-color: #fff3e0; color: #e67e22')  # Orange
+                    else:
+                        styles.append('')
+                elif s.name == "Sót K1 (Nay)":
+                    # Only highlight if cell has value
+                    if val and str(val).strip():
+                        styles.append('background-color: #e8f8f5; color: #16a085')  # Green
+                    else:
+                        styles.append('')
+                else:
+                    styles.append('')
+            return styles
         
         styled_df = df_anal.style.apply(highlight_cols)
         
