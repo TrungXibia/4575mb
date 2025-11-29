@@ -644,3 +644,4 @@ else:
             hide_index=True,
             column_config=anal_config
         )
+
