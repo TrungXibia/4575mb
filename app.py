@@ -7,7 +7,7 @@ from collections import Counter
 import pandas as pd
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # =============================================================================
 # CẤU HÌNH & DỮ LIỆU
@@ -270,6 +270,7 @@ with col3:
     else: station = st.selectbox("Đài", ["Không có lịch quay"], disabled=True, label_visibility="collapsed")
 
 with col4:
+    # Auto load logic: Check if station changed
     if station and station != "Không có lịch quay":
         if station != st.session_state.get('current_station'):
             with st.spinner(f"Đang tải {station}..."):
@@ -279,6 +280,8 @@ with col4:
                 st.session_state.current_station = station
                 st.rerun()
 
+    # NOTE: The button is critical for the JavaScript to click. 
+    # Do NOT remove type="primary" or the logic below will break.
     if st.button("🔄 TẢI LẠI", type="primary", use_container_width=True):
         if station and station != "Không có lịch quay":
             with st.spinner(f"Đang tải {station}..."):
@@ -298,6 +301,10 @@ with col4:
         elif region == "Miền Nam": draw_time_config = "16:15"
         elif region == "Miền Trung": draw_time_config = "17:15"
 
+    # -----------------------------------------------------------------------------------------
+    # JAVASCRIPT AUTO RELOAD LOGIC:
+    # When diff <= 0, wait 4 seconds (buffer), then find the Primary Button and Click it.
+    # -----------------------------------------------------------------------------------------
     clock_html = f"""
     <style>
         body {{ margin: 0; padding: 0; font-family: "Source Sans Pro", sans-serif; font-size: 13px; background-color: transparent; color: #31333F; }}
@@ -314,33 +321,68 @@ with col4:
         var interval = {interval_seconds};
         var lastTimeStr = "{st.session_state.last_open_time}"; 
         var drawTimeConfig = "{draw_time_config}";
+        var reloadScheduled = false;
+
         function parseDate(str) {{ var t = str.split(/[- :]/); return new Date(t[0], t[1]-1, t[2], t[3], t[4], t[5]); }}
+        
+        function triggerReload() {{
+            if (!reloadScheduled) {{
+                reloadScheduled = true;
+                // Wait 4 seconds for API to have data, then click Reload
+                setTimeout(function() {{
+                    // Try to find the Streamlit Primary Button (TẢI LẠI) and click it
+                    var buttons = window.parent.document.querySelectorAll('button[kind="primary"]');
+                    if (buttons.length > 0) {{
+                        buttons[0].click();
+                    }} else {{
+                        // Fallback selector
+                        var buttons2 = window.parent.document.querySelectorAll('button[data-testid="baseButton-primary"]');
+                        if (buttons2.length > 0) buttons2[0].click();
+                    }}
+                }}, 4000); 
+            }}
+        }}
+
         function updateClock() {{
             var now = new Date();
             var targetDate = null;
             var diff = 0;
+            
             if (interval > 0) {{
+                // Logic for 75s/45s
                 var lastDate = parseDate(lastTimeStr);
                 targetDate = new Date(lastDate.getTime() + interval * 1000);
                 diff = targetDate - now;
             }} else if (drawTimeConfig) {{
+                // Logic for Traditional
                 var parts = drawTimeConfig.split(":");
                 targetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), parts[0], parts[1], 0);
                 if (now > targetDate) {{ targetDate.setDate(targetDate.getDate() + 1); }}
                 diff = targetDate - now;
             }}
+            
             var cdEl = document.getElementById('countdown');
+            
             if (diff > 0) {{
                 var hours = Math.floor(diff / (1000 * 60 * 60));
                 var minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
                 var seconds = Math.floor((diff % (1000 * 60)) / 1000);
                 cdEl.innerText = (hours>0?hours.toString().padStart(2,'0')+':':'') + minutes.toString().padStart(2,'0') + ':' + seconds.toString().padStart(2,'0');
                 cdEl.style.color = "#28a745";
+                reloadScheduled = false; // Reset flag when time is positive
             }} else {{
-                cdEl.innerText = "Đang quay..."; cdEl.style.color = "#dc3545";
+                // Time is up!
+                cdEl.innerText = "Đang quay..."; 
+                cdEl.style.color = "#dc3545";
+                
+                // Trigger auto-reload logic
+                if (interval > 0 || Math.abs(diff) < 60000) {{ // Only trigger if recent
+                    triggerReload();
+                }}
             }}
         }}
-        setInterval(updateClock, 1000); updateClock();
+        setInterval(updateClock, 1000); 
+        updateClock();
     </script>
     """
     components.html(clock_html, height=40)
