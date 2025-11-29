@@ -7,7 +7,7 @@ from collections import Counter
 import pandas as pd
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # =============================================================================
 # CẤU HÌNH & DỮ LIỆU
@@ -328,14 +328,11 @@ with col4:
         function triggerReload() {{
             if (!reloadScheduled) {{
                 reloadScheduled = true;
-                // Wait 4 seconds for API to have data, then click Reload
                 setTimeout(function() {{
-                    // Try to find the Streamlit Primary Button (TẢI LẠI) and click it
                     var buttons = window.parent.document.querySelectorAll('button[kind="primary"]');
                     if (buttons.length > 0) {{
                         buttons[0].click();
                     }} else {{
-                        // Fallback selector
                         var buttons2 = window.parent.document.querySelectorAll('button[data-testid="baseButton-primary"]');
                         if (buttons2.length > 0) buttons2[0].click();
                     }}
@@ -349,12 +346,10 @@ with col4:
             var diff = 0;
             
             if (interval > 0) {{
-                // Logic for 75s/45s
                 var lastDate = parseDate(lastTimeStr);
                 targetDate = new Date(lastDate.getTime() + interval * 1000);
                 diff = targetDate - now;
             }} else if (drawTimeConfig) {{
-                // Logic for Traditional
                 var parts = drawTimeConfig.split(":");
                 targetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), parts[0], parts[1], 0);
                 if (now > targetDate) {{ targetDate.setDate(targetDate.getDate() + 1); }}
@@ -369,14 +364,11 @@ with col4:
                 var seconds = Math.floor((diff % (1000 * 60)) / 1000);
                 cdEl.innerText = (hours>0?hours.toString().padStart(2,'0')+':':'') + minutes.toString().padStart(2,'0') + ':' + seconds.toString().padStart(2,'0');
                 cdEl.style.color = "#28a745";
-                reloadScheduled = false; // Reset flag when time is positive
+                reloadScheduled = false;
             }} else {{
-                // Time is up!
                 cdEl.innerText = "Đang quay..."; 
                 cdEl.style.color = "#dc3545";
-                
-                // Trigger auto-reload logic
-                if (interval > 0 || Math.abs(diff) < 60000) {{ // Only trigger if recent
+                if (interval > 0 || Math.abs(diff) < 60000) {{ 
                     triggerReload();
                 }}
             }}
@@ -443,11 +435,15 @@ with tab1:
                 rows_res.append(row)
             
             df_res = pd.DataFrame(rows_res, columns=headers)
+            
+            # CONFIG: Fixed width 30px for result columns
             column_config = {
-                "Kỳ": st.column_config.TextColumn("Kỳ", width=70),
-                "ĐB": st.column_config.TextColumn("ĐB", width=50),
+                "Kỳ": st.column_config.TextColumn("Kỳ", width=30),
+                "ĐB": st.column_config.TextColumn("ĐB", width=30),
             }
-            for h in headers[2:]: column_config[h] = st.column_config.TextColumn(h, width=50)
+            for h in headers[2:]: 
+                column_config[h] = st.column_config.TextColumn(h, width=30)
+
             st.dataframe(df_res, height=700, use_container_width=True, hide_index=True, column_config=column_config)
         
         with col_right:
@@ -496,6 +492,16 @@ with tab1:
             
             df_anal = pd.DataFrame(rows_anal, columns=["Kỳ", "Thiếu", "Sót K0", "Sót K1"] + [f"Sót K{k}" for k in range(2, 8)])
             
+            # CONFIG: Fixed width 60px for Sót columns
+            anal_config = {
+                "Kỳ": st.column_config.TextColumn("Kỳ", width=30),
+                "Thiếu": st.column_config.TextColumn("Thiếu", width=50),
+                "Sót K0": st.column_config.TextColumn("Sót K0", width=60),
+                "Sót K1": st.column_config.TextColumn("Sót K1", width=60)
+            }
+            for k in range(2, 8):
+                anal_config[f"Sót K{k}"] = st.column_config.TextColumn(f"Sót K{k}", width=60)
+
             def highlight_t1(s):
                 styles = []
                 for v in s:
@@ -504,7 +510,7 @@ with tab1:
                     else: styles.append('')
                 return styles
             
-            st.dataframe(df_anal.style.apply(highlight_t1), height=700, use_container_width=True, hide_index=True)
+            st.dataframe(df_anal.style.apply(highlight_t1), height=700, use_container_width=True, hide_index=True, column_config=anal_config)
 
 # -----------------------------------------------------------------------------
 # TAB 2: CẦU THIẾU ĐẦU & TRÚNG
@@ -534,7 +540,15 @@ with tab2:
                 rows_simple.append([item['turnNum'], db, g1])
             
             df_simple = pd.DataFrame(rows_simple, columns=["Kỳ", "ĐB", "G1"])
-            st.dataframe(df_simple, height=700, use_container_width=True, hide_index=True)
+            
+            # CONFIG: Fixed width 30px for result columns
+            simple_config = {
+                "Kỳ": st.column_config.TextColumn("Kỳ", width=30),
+                "ĐB": st.column_config.TextColumn("ĐB", width=30),
+                "G1": st.column_config.TextColumn("G1", width=30),
+            }
+
+            st.dataframe(df_simple, height=700, use_container_width=True, hide_index=True, column_config=simple_config)
             
         with t2_right:
             # Analysis Logic
@@ -574,6 +588,15 @@ with tab2:
             cols_t2 = ["Kỳ", "Thiếu Đầu", "Dàn K0", "K1", "K2", "K3", "K4", "K5", "K6", "K7"]
             df_t2 = pd.DataFrame(rows_t2, columns=cols_t2)
             
+            # CONFIG: Fixed width 60px for K1-K7 (Sót equivalent)
+            t2_config = {
+                "Kỳ": st.column_config.TextColumn("Kỳ", width=30),
+                "Thiếu Đầu": st.column_config.TextColumn("Thiếu Đầu", width=40),
+                "Dàn K0": st.column_config.TextColumn("Dàn K0", width="medium"), # Dàn is long
+            }
+            for k in range(1, 8):
+                t2_config[f"K{k}"] = st.column_config.TextColumn(f"K{k}", width=60)
+
             def highlight_t2(s):
                 styles = []
                 for v in s:
@@ -587,9 +610,5 @@ with tab2:
                 height=700, 
                 use_container_width=True, 
                 hide_index=True,
-                column_config={
-                    "Dàn K0": st.column_config.TextColumn("Dàn K0", width=200),
-                    "Kỳ": st.column_config.TextColumn("Kỳ", width=70),
-                    "Thiếu Đầu": st.column_config.TextColumn("Thiếu Đầu", width=70)
-                }
+                column_config=t2_config
             )
