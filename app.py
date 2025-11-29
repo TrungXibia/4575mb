@@ -148,6 +148,46 @@ def load_data(station_name):
     return [], ""
 
 # =============================================================================
+# LOGIC HELPER FUNCTIONS
+# =============================================================================
+
+def generate_cham_tong(list_missing):
+    """Tạo dàn Chạm + Tổng từ list số thiếu"""
+    result_set = set()
+    for d_str in list_missing:
+        try:
+            d = int(d_str)
+        except:
+            continue
+        # Chạm
+        for i in range(100):
+            s = f"{i:02d}"
+            if str(d) in s:
+                result_set.add(s)
+        # Tổng
+        for i in range(100):
+            s = f"{i:02d}"
+            digit_sum = (int(s[0]) + int(s[1])) % 10
+            if digit_sum == d:
+                result_set.add(s)
+    return sorted(list(result_set))
+
+def get_target_results(prizes_flat, use_duoi_db, use_dau_db, use_duoi_g1, use_dau_g1):
+    """Lấy tập hợp kết quả để so sánh (Đuôi/Đầu ĐB/G1)"""
+    targets = set()
+    if len(prizes_flat) > 0:
+        db = prizes_flat[0].strip()
+        if len(db) >= 2:
+            if use_duoi_db: targets.add(db[-2:])
+            if use_dau_db: targets.add(db[:2])
+    if len(prizes_flat) > 1:
+        g1 = prizes_flat[1].strip()
+        if len(g1) >= 2:
+            if use_duoi_g1: targets.add(g1[-2:])
+            if use_dau_g1: targets.add(g1[:2])
+    return targets
+
+# =============================================================================
 # STREAMLIT APP
 # =============================================================================
 
@@ -156,7 +196,6 @@ st.set_page_config(page_title="Phần Mềm Soi Cầu 3 Miền", layout="wide")
 # CSS for Compact UI
 st.markdown("""
 <style>
-    /* Compact Layout */
     .block-container {
         padding-top: 0.5rem !important;
         padding-bottom: 0rem !important;
@@ -164,58 +203,24 @@ st.markdown("""
         padding-right: 1rem !important;
         max-width: 100% !important;
     }
-    
-    /* Reduce font sizes */
     html, body, [class*="css"] {
-        font-size: 12px;
+        font-size: 13px;
     }
-    p, .stMarkdown, .stText {
-        font-size: 13px !important;
-        margin-bottom: 0px !important;
-    }
-    
-    /* Compact Controls */
     div[data-testid="stVerticalBlock"] > div {
         gap: 0.2rem !important;
     }
-    
-    /* Compact Dataframe */
     .stDataFrame {
-        font-size: 11px !important;
+        font-size: 12px !important;
     }
-    
-    /* Headers */
     h1, h2, h3, h4, h5 {
         margin-bottom: 0.2rem !important;
         padding-top: 0 !important;
         color: #ff4b4b !important;
     }
-    
-    /* Expander */
-    .streamlit-expanderHeader {
-        font-size: 13px !important;
-        padding: 0.2rem 0.5rem !important;
-        background-color: #f8f9fa !important;
-        border: 1px solid #dee2e6 !important;
-        color: #31333F !important;
-    }
-    
-    /* Buttons */
-    button {
-        height: auto !important;
-        padding-top: 0.2rem !important;
-        padding-bottom: 0.2rem !important;
-    }
-    
-    /* Checkboxes */
-    div[data-testid="stCheckbox"] {
-        min-height: 1rem !important;
-        margin-top: -8px !important;
-        margin-bottom: -8px !important;
-    }
-    div[data-testid="stCheckbox"] label {
-        font-size: 11px !important;
-        padding-left: 0.2rem !important;
+    /* Tabs */
+    button[data-baseweb="tab"] {
+        font-size: 14px !important;
+        font-weight: bold !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -225,53 +230,46 @@ if 'raw_data' not in st.session_state:
     st.session_state.raw_data = []
     st.session_state.last_open_time = ""
     st.session_state.current_station = ""
-    # Auto load Miền Bắc on first run
     data, time = load_data("Miền Bắc")
     st.session_state.raw_data = data
     st.session_state.last_open_time = time
     st.session_state.current_station = "Miền Bắc"
 
 if 'selected_giai' not in st.session_state:
-    st.session_state.selected_giai = [2, 3]  # Default: G2-1, G2-2
+    st.session_state.selected_giai = [2, 3]
+
+# Tab 2 states
+if 'tab2_duoi_db' not in st.session_state: st.session_state.tab2_duoi_db = True
+if 'tab2_dau_db' not in st.session_state: st.session_state.tab2_dau_db = False
+if 'tab2_duoi_g1' not in st.session_state: st.session_state.tab2_duoi_g1 = False
+if 'tab2_dau_g1' not in st.session_state: st.session_state.tab2_dau_g1 = False
 
 # =============================================================================
 # TOP CONTROLS
 # =============================================================================
 
 st.markdown("#### 🛠️ CẤU HÌNH & DỮ LIỆU")
-
 col1, col2, col3, col4 = st.columns([1.5, 1.5, 3, 3])
 
 with col1:
     region = st.selectbox("Khu vực", ["Miền Bắc", "Miền Nam", "Miền Trung"], index=0, label_visibility="collapsed")
-
 with col2:
-    # Default to current day
     current_day = get_current_day_vietnamese()
-    try:
-        default_day_idx = DAYS_OF_WEEK.index(current_day)
-    except:
-        default_day_idx = 0
+    try: default_day_idx = DAYS_OF_WEEK.index(current_day)
+    except: default_day_idx = 0
     selected_day = st.selectbox("Thứ", DAYS_OF_WEEK, index=default_day_idx, label_visibility="collapsed")
-
 with col3:
-    # Get stations based on region and selected day
     stations = []
     if region == "Miền Bắc":
         lbl_tinh = LICH_QUAY_BAC.get(selected_day, "")
         stations = [f"Miền Bắc ({lbl_tinh})", "Miền Bắc 75s", "Miền Bắc 45s"]
-    elif region == "Miền Nam":
-        stations = LICH_QUAY_NAM.get(selected_day, [])
-    elif region == "Miền Trung":
-        stations = LICH_QUAY_TRUNG.get(selected_day, [])
+    elif region == "Miền Nam": stations = LICH_QUAY_NAM.get(selected_day, [])
+    elif region == "Miền Trung": stations = LICH_QUAY_TRUNG.get(selected_day, [])
     
-    if stations:
-        station = st.selectbox("Đài", stations, index=0, label_visibility="collapsed")
-    else:
-        station = st.selectbox("Đài", ["Không có lịch quay"], disabled=True, label_visibility="collapsed")
+    if stations: station = st.selectbox("Đài", stations, index=0, label_visibility="collapsed")
+    else: station = st.selectbox("Đài", ["Không có lịch quay"], disabled=True, label_visibility="collapsed")
 
 with col4:
-    # Auto load logic: Check if station changed
     if station and station != "Không có lịch quay":
         if station != st.session_state.get('current_station'):
             with st.spinner(f"Đang tải {station}..."):
@@ -281,7 +279,6 @@ with col4:
                 st.session_state.current_station = station
                 st.rerun()
 
-    # Manual Reload Button
     if st.button("🔄 TẢI LẠI", type="primary", use_container_width=True):
         if station and station != "Không có lịch quay":
             with st.spinner(f"Đang tải {station}..."):
@@ -291,357 +288,266 @@ with col4:
                 st.session_state.current_station = station
                 st.rerun()
 
-    # Determine Interval and Next Draw Time Logic
+    # Clock Logic
     interval_seconds = 0
-    draw_time_config = "" # For traditional lotteries (HH:mm)
-    
-    if "75s" in station:
-        interval_seconds = 75
-    elif "45s" in station:
-        interval_seconds = 45
+    draw_time_config = ""
+    if "75s" in station: interval_seconds = 75
+    elif "45s" in station: interval_seconds = 45
     else:
-        # Traditional Lottery Schedules
-        if region == "Miền Bắc":
-            draw_time_config = "18:15"
-        elif region == "Miền Nam":
-            draw_time_config = "16:15"
-        elif region == "Miền Trung":
-            draw_time_config = "17:15"
+        if region == "Miền Bắc": draw_time_config = "18:15"
+        elif region == "Miền Nam": draw_time_config = "16:15"
+        elif region == "Miền Trung": draw_time_config = "17:15"
 
-    # Display Time & Countdown (Real-time Clock)
     clock_html = f"""
     <style>
-        body {{
-            margin: 0;
-            padding: 0;
-            font-family: "Source Sans Pro", sans-serif;
-            font-size: 13px;
-            background-color: transparent;
-            color: #31333F;
-        }}
-        .container {{
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding-top: 8px;
-        }}
-        .highlight {{
-            color: #ff4b4b;
-            font-weight: bold;
-            font-size: 14px;
-        }}
-        .clock {{
-            color: #0068c9;
-            font-weight: bold;
-            font-size: 14px;
-        }}
-        .countdown {{
-            color: #28a745; /* Green */
-            font-weight: bold;
-            font-size: 14px;
-            margin-left: 10px;
-        }}
-        .label {{
-            font-weight: 600;
-            margin-right: 4px;
-        }}
+        body {{ margin: 0; padding: 0; font-family: "Source Sans Pro", sans-serif; font-size: 13px; background-color: transparent; color: #31333F; }}
+        .container {{ display: flex; align-items: center; justify-content: space-between; padding-top: 8px; }}
+        .highlight {{ color: #ff4b4b; font-weight: bold; font-size: 14px; }}
+        .countdown {{ color: #28a745; font-weight: bold; font-size: 14px; margin-left: 10px; }}
+        .label {{ font-weight: 600; margin-right: 4px; }}
     </style>
     <div class="container">
-        <div>
-            <span class="label">📅 Kỳ:</span>
-            <span class="highlight">{st.session_state.last_open_time}</span>
-        </div>
-        <div>
-            <span class="label">⏳ Sắp quay:</span>
-            <span id="countdown" class="countdown">--:--</span>
-        </div>
-        <div>
-            <span class="label">🕒</span>
-            <span id="clock" class="clock">Loading...</span>
-        </div>
+        <div><span class="label">📅 Kỳ:</span><span class="highlight">{st.session_state.last_open_time}</span></div>
+        <div><span class="label">⏳ Sắp quay:</span><span id="countdown" class="countdown">--:--</span></div>
     </div>
     <script>
         var interval = {interval_seconds};
-        var lastTimeStr = "{st.session_state.last_open_time}"; // Format: YYYY-MM-DD HH:mm:ss
-        var drawTimeConfig = "{draw_time_config}"; // Format: HH:mm
-        
-        function parseDate(str) {{
-            // Handle format YYYY-MM-DD HH:mm:ss for Safari/Firefox compatibility
-            var t = str.split(/[- :]/);
-            return new Date(t[0], t[1]-1, t[2], t[3], t[4], t[5]);
-        }}
-
+        var lastTimeStr = "{st.session_state.last_open_time}"; 
+        var drawTimeConfig = "{draw_time_config}";
+        function parseDate(str) {{ var t = str.split(/[- :]/); return new Date(t[0], t[1]-1, t[2], t[3], t[4], t[5]); }}
         function updateClock() {{
             var now = new Date();
-            
-            // 1. Update System Clock
-            var timeStr = now.toLocaleTimeString('vi-VN', {{hour12: false}});
-            var dateStr = now.toLocaleDateString('vi-VN');
-            document.getElementById('clock').innerText = timeStr;
-
-            // 2. Update Countdown
             var targetDate = null;
             var diff = 0;
-
             if (interval > 0) {{
-                // Logic for 75s/45s
                 var lastDate = parseDate(lastTimeStr);
                 targetDate = new Date(lastDate.getTime() + interval * 1000);
-                
-                // If target is in the past (data outdated), keep adding interval to find next theoretical draw
-                // or just show "Waiting..." if we strictly follow the last loaded data.
-                // Here we strictly follow last loaded data + interval to prompt user to reload.
                 diff = targetDate - now;
             }} else if (drawTimeConfig) {{
-                // Logic for Traditional
                 var parts = drawTimeConfig.split(":");
                 targetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), parts[0], parts[1], 0);
-                if (now > targetDate) {{
-                    // If passed today's draw time, target tomorrow
-                    targetDate.setDate(targetDate.getDate() + 1);
-                }}
+                if (now > targetDate) {{ targetDate.setDate(targetDate.getDate() + 1); }}
                 diff = targetDate - now;
             }}
-
             var cdEl = document.getElementById('countdown');
-            
             if (diff > 0) {{
                 var hours = Math.floor(diff / (1000 * 60 * 60));
                 var minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
                 var seconds = Math.floor((diff % (1000 * 60)) / 1000);
-                
-                var hStr = hours > 0 ? hours.toString().padStart(2, '0') + ':' : '';
-                var mStr = minutes.toString().padStart(2, '0');
-                var sStr = seconds.toString().padStart(2, '0');
-                
-                cdEl.innerText = hStr + mStr + ':' + sStr;
-                cdEl.style.color = "#28a745"; // Green
+                cdEl.innerText = (hours>0?hours.toString().padStart(2,'0')+':':'') + minutes.toString().padStart(2,'0') + ':' + seconds.toString().padStart(2,'0');
+                cdEl.style.color = "#28a745";
             }} else {{
-                if (interval > 0) {{
-                     cdEl.innerText = "Đang quay...";
-                     cdEl.style.color = "#dc3545"; // Red
-                }} else {{
-                     cdEl.innerText = "Đang quay...";
-                     cdEl.style.color = "#dc3545";
-                }}
+                cdEl.innerText = "Đang quay..."; cdEl.style.color = "#dc3545";
             }}
         }}
-        setInterval(updateClock, 1000);
-        updateClock();
+        setInterval(updateClock, 1000); updateClock();
     </script>
     """
     components.html(clock_html, height=40)
 
-# Prize Selection
-with st.expander("🎯 CHỌN GIẢI ĐỂ PHÂN TÍCH", expanded=True):
-    # Control buttons
-    c1, c2, c3 = st.columns([1, 1, 8])
-    with c1:
-        if st.button("Chọn hết"):
-            st.session_state.selected_giai = list(range(1, len(GIAI_LABELS_MB)))
-            st.rerun()
-    with c2:
-        if st.button("Bỏ chọn"):
-            st.session_state.selected_giai = []
-            st.rerun()
-            
-    # Create checkboxes in columns (9 columns)
-    num_cols = 9
-    giai_selected = []
-    cols = st.columns(num_cols)
-    
-    for i, label in enumerate(GIAI_LABELS_MB):
-        if i == 0: continue # Skip ĐB
-        
-        col_idx = (i-1) % num_cols
-        with cols[col_idx]:
-            default_val = i in st.session_state.selected_giai
-            if st.checkbox(label, value=default_val, key=f"giai_{i}"):
-                giai_selected.append(i)
-    
-    st.session_state.selected_giai = giai_selected
-
 st.markdown("---")
 
 # =============================================================================
-# MAIN CONTENT
+# TABS LOGIC
 # =============================================================================
 
-if not st.session_state.raw_data:
-    st.info("Chưa có dữ liệu.")
-else:
-    # Create two columns (Adjust ratio to make left side smaller)
-    col_left, col_right = st.columns([2.5, 5.5])
-    
-    with col_left:
-        st.markdown("##### 📊 KẾT QUẢ")
-        
-        # Build result table
-        display_indices = [0]  # Always include ĐB
-        headers = ["Kỳ", "ĐB"]
-        
-        for i in st.session_state.selected_giai:
-            display_indices.append(i)
-            headers.append(GIAI_LABELS_MB[i])
-        
-        rows_res = []
-        for item in st.session_state.raw_data:
-            d = json.loads(item['detail'])
-            prizes_flat = []
-            for f in d:
-                prizes_flat += f.split(',')
-            
-            row = [item['turnNum']]
-            for idx in display_indices:
-                if idx < len(prizes_flat):
-                    row.append(prizes_flat[idx])
-                else:
-                    row.append("")
-            rows_res.append(row)
-        
-        df_res = pd.DataFrame(rows_res, columns=headers)
-        
-        # Configure columns for compactness (Force pixel width)
-        column_config = {
-            "Kỳ": st.column_config.TextColumn("Kỳ", width=70),
-            "ĐB": st.column_config.TextColumn("ĐB", width=50),
-        }
-        for h in headers[2:]:
-             column_config[h] = st.column_config.TextColumn(h, width=50)
+tab1, tab2 = st.tabs(["📊 CẦU LIST 0 (TRUYỀN THỐNG)", "🎯 CẦU THIẾU ĐẦU & KIỂM TRA TRÚNG"])
 
-        st.dataframe(
-            df_res, 
-            height=700, 
-            use_container_width=True, 
-            hide_index=True,
-            column_config=column_config
-        )
-    
-    with col_right:
-        st.markdown("##### 📈 PHÂN TÍCH LIST 0 & SÓT K1-K7")
+# -----------------------------------------------------------------------------
+# TAB 1: CẦU LIST 0
+# -----------------------------------------------------------------------------
+with tab1:
+    with st.expander("⚙️ CẤU HÌNH GIẢI PHÂN TÍCH", expanded=False):
+        c1, c2, c3 = st.columns([1, 1, 8])
+        with c1:
+            if st.button("Chọn hết", key="btn_all"):
+                st.session_state.selected_giai = list(range(1, len(GIAI_LABELS_MB)))
+                st.rerun()
+        with c2:
+            if st.button("Bỏ chọn", key="btn_none"):
+                st.session_state.selected_giai = []
+                st.rerun()
         
-        # Process data for analysis
-        processed = []
-        for item in st.session_state.raw_data:
-            detail = json.loads(item['detail'])
-            prizes_flat = []
-            for field in detail:
-                prizes_flat += field.split(",")
-            
-            g_nums = []
-            for idx in st.session_state.selected_giai:
-                if idx < len(prizes_flat):
-                    g_nums.extend([ch for ch in prizes_flat[idx].strip() if ch.isdigit()])
-            
-            counter = Counter(g_nums)
-            counts = [counter.get(str(d), 0) for d in range(10)]
-            list0 = [str(i) for i, v in enumerate(counts) if v == 0]
-            
-            current_los = []
-            for lo in prizes_flat:
-                lo = lo.strip()
-                if len(lo) >= 2 and lo[-2:].isdigit():
-                    current_los.append(lo[-2:])
-            
-            processed.append({
-                "ky": item['turnNum'],
-                "list0": list0,
-                "res": current_los
-            })
+        num_cols = 9
+        giai_selected = []
+        cols = st.columns(num_cols)
+        for i, label in enumerate(GIAI_LABELS_MB):
+            if i == 0: continue
+            col_idx = (i-1) % num_cols
+            with cols[col_idx]:
+                default_val = i in st.session_state.selected_giai
+                if st.checkbox(label, value=default_val, key=f"giai_{i}"):
+                    giai_selected.append(i)
+        st.session_state.selected_giai = giai_selected
+
+    if not st.session_state.raw_data:
+        st.info("Chưa có dữ liệu.")
+    else:
+        col_left, col_right = st.columns([2.5, 5.5])
         
-        # Bridge logic
-        def bridge_ab(l1, l2):
-            s = set()
-            for a in l1:
-                for b in l2:
-                    s.add(a + b)
-                    s.add(b + a)
-            return sorted(list(s))
-        
-        def diff(src, target):
-            return sorted(list(set(src) - set(target)))
-        
-        # Build analysis table
-        rows_anal = []
-        for i in range(len(processed)):
-            curr = processed[i]
-            row = [curr["ky"], ",".join(curr["list0"])]
+        with col_left:
+            st.markdown("##### KẾT QUẢ")
+            display_indices = [0] + st.session_state.selected_giai
+            headers = ["Kỳ", "ĐB"] + [GIAI_LABELS_MB[i] for i in st.session_state.selected_giai]
             
-            # Sót K0 (N1-N0): Bridge current row's List 0 with next row's List 0
-            if i + 1 < len(processed):
-                l0_current = curr["list0"]
-                l0_next = processed[i + 1]["list0"]
-                bridge_k0 = bridge_ab(l0_next, l0_current)
-                # Subtract current draw's results
-                bridge_k0 = diff(bridge_k0, curr["res"])
-                row.append(" ".join(bridge_k0))
-            else:
-                row.append("")
+            rows_res = []
+            for item in st.session_state.raw_data:
+                d = json.loads(item['detail'])
+                prizes_flat = []
+                for f in d: prizes_flat += f.split(',')
+                row = [item['turnNum']]
+                for idx in display_indices:
+                    row.append(prizes_flat[idx] if idx < len(prizes_flat) else "")
+                rows_res.append(row)
             
-            # Sót K1-K7: Display data from previous row (shifted down)
-            # Row i shows K1-K7 calculated for row i-1
-            if i > 0 and i + 1 < len(processed):
-                # Use data from previous row (i-1)
-                l0_prev1 = processed[i]["list0"]      # N1 for row i-1
-                l0_prev2 = processed[i + 1]["list0"]  # N2 for row i-1
-                current_dan = bridge_ab(l0_prev2, l0_prev1)
+            df_res = pd.DataFrame(rows_res, columns=headers)
+            column_config = {
+                "Kỳ": st.column_config.TextColumn("Kỳ", width=70),
+                "ĐB": st.column_config.TextColumn("ĐB", width=50),
+            }
+            for h in headers[2:]: column_config[h] = st.column_config.TextColumn(h, width=50)
+            st.dataframe(df_res, height=700, use_container_width=True, hide_index=True, column_config=column_config)
+        
+        with col_right:
+            st.markdown("##### PHÂN TÍCH LIST 0 & SÓT")
+            processed = []
+            for item in st.session_state.raw_data:
+                d = json.loads(item['detail'])
+                prizes_flat = []
+                for f in d: prizes_flat += f.split(',')
+                g_nums = []
+                for idx in st.session_state.selected_giai:
+                    if idx < len(prizes_flat):
+                        g_nums.extend([ch for ch in prizes_flat[idx].strip() if ch.isdigit()])
+                counter = Counter(g_nums)
+                list0 = [str(i) for i, v in enumerate([counter.get(str(d), 0) for d in range(10)]) if v == 0]
+                res_los = [lo[-2:] for lo in prizes_flat if len(lo)>=2 and lo[-2:].isdigit()]
+                processed.append({"ky": item['turnNum'], "list0": list0, "res": res_los})
+
+            def bridge_ab(l1, l2):
+                s = set()
+                for a in l1:
+                    for b in l2: s.add(a+b); s.add(b+a)
+                return sorted(list(s))
+            def diff(src, target): return sorted(list(set(src) - set(target)))
+
+            rows_anal = []
+            for i in range(len(processed)):
+                curr = processed[i]
+                row = [curr["ky"], ",".join(curr["list0"])]
                 
-                for k in range(7):
-                    # K1 uses i, K2 uses i-1, K3 uses i-2, etc.
+                # K0
+                if i+1 < len(processed):
+                    k0 = diff(bridge_ab(processed[i+1]["list0"], curr["list0"]), curr["res"])
+                    row.append(" ".join(k0))
+                else: row.append("")
+                
+                # K1-K7
+                if i>0 and i+1 < len(processed):
+                    dan = bridge_ab(processed[i+1]["list0"], processed[i]["list0"])
+                    for k in range(7):
+                        t_idx = i - k
+                        if t_idx < 0: row.append("")
+                        else: row.append(" ".join(diff(dan, processed[t_idx]["res"])))
+                else: row.extend([""]*7)
+                rows_anal.append(row)
+            
+            df_anal = pd.DataFrame(rows_anal, columns=["Kỳ", "Thiếu", "Sót K0", "Sót K1"] + [f"Sót K{k}" for k in range(2, 8)])
+            
+            def highlight_t1(s):
+                styles = []
+                for v in s:
+                    if s.name == "Thiếu": styles.append('background-color: #ffebee; color: #c0392b')
+                    elif s.name == "Sót K1": styles.append('background-color: #e8f8f5; color: #16a085' if v else '')
+                    else: styles.append('')
+                return styles
+            
+            st.dataframe(df_anal.style.apply(highlight_t1), height=700, use_container_width=True, hide_index=True)
+
+# -----------------------------------------------------------------------------
+# TAB 2: CẦU THIẾU ĐẦU & TRÚNG
+# -----------------------------------------------------------------------------
+with tab2:
+    st.markdown("##### ⚙️ MỤC TIÊU SO SÁNH (Check để tính Trúng/Trượt)")
+    chk_c1, chk_c2, chk_c3, chk_c4, _ = st.columns([1,1,1,1,4])
+    with chk_c1: st.session_state.tab2_duoi_db = st.checkbox("Đuôi ĐB", st.session_state.tab2_duoi_db)
+    with chk_c2: st.session_state.tab2_dau_db = st.checkbox("Đầu ĐB", st.session_state.tab2_dau_db)
+    with chk_c3: st.session_state.tab2_duoi_g1 = st.checkbox("Đuôi G1", st.session_state.tab2_duoi_g1)
+    with chk_c4: st.session_state.tab2_dau_g1 = st.checkbox("Đầu G1", st.session_state.tab2_dau_g1)
+
+    if not st.session_state.raw_data:
+        st.info("Chưa có dữ liệu.")
+    else:
+        t2_left, t2_right = st.columns([2, 6])
+        
+        with t2_left:
+            # Simple result table
+            rows_simple = []
+            for item in st.session_state.raw_data:
+                d = json.loads(item['detail'])
+                prizes_flat = []
+                for f in d: prizes_flat += f.split(',')
+                db = prizes_flat[0] if len(prizes_flat)>0 else ""
+                g1 = prizes_flat[1] if len(prizes_flat)>1 else ""
+                rows_simple.append([item['turnNum'], db, g1])
+            
+            df_simple = pd.DataFrame(rows_simple, columns=["Kỳ", "ĐB", "G1"])
+            st.dataframe(df_simple, height=700, use_container_width=True, hide_index=True)
+            
+        with t2_right:
+            # Analysis Logic
+            processed_data = []
+            for item in st.session_state.raw_data:
+                d = json.loads(item['detail'])
+                prizes_flat = []
+                for f in d: prizes_flat += f.split(',')
+                heads = [p[0] for p in prizes_flat if p.strip()]
+                counter = Counter(heads)
+                missing = [str(i) for i, v in enumerate([counter.get(str(d),0) for d in range(10)]) if v==0]
+                processed_data.append({"ky": item['turnNum'], "missing": missing, "full": prizes_flat})
+            
+            rows_t2 = []
+            for i in range(len(processed_data)):
+                curr = processed_data[i]
+                dan = generate_cham_tong(curr["missing"])
+                row = [curr["ky"], ",".join(curr["missing"]), " ".join(dan)]
+                
+                # Check hits K1-K7
+                for k in range(1, 8):
                     target_idx = i - k
                     if target_idx < 0:
                         row.append("")
                     else:
-                        res_target = processed[target_idx]["res"]
-                        current_dan = diff(current_dan, res_target)
-                        row.append(" ".join(current_dan))
-            else:
-                row.extend([""] * 7)
+                        target_data = processed_data[target_idx]
+                        targets = get_target_results(
+                            target_data["full"], 
+                            st.session_state.tab2_duoi_db, st.session_state.tab2_dau_db,
+                            st.session_state.tab2_duoi_g1, st.session_state.tab2_dau_g1
+                        )
+                        hits = set(dan).intersection(targets)
+                        if hits: row.append(f"TRÚNG {','.join(sorted(list(hits)))}")
+                        else: row.append("-")
+                rows_t2.append(row)
             
-            rows_anal.append(row)
-        
-        cols_anal = ["Kỳ", "List 0 (Thiếu)", "Sót K0 (N1-N0)", "Sót K1 (Nay)", "Sót K2", "Sót K3", "Sót K4", "Sót K5", "Sót K6", "Sót K7"]
-        df_anal = pd.DataFrame(rows_anal, columns=cols_anal)
-        
-        # Apply styling
-        def highlight_cols(s):
-            styles = []
-            for val in s:
-                if s.name == "List 0 (Thiếu)":
-                    styles.append('background-color: #ffebee; color: #c0392b')
-                elif s.name == "Sót K0 (N1-N0)":
-                    # Only highlight if cell has value
-                    if val and str(val).strip():
-                        styles.append('background-color: #fff3e0; color: #e67e22')  # Orange
-                    else:
-                        styles.append('')
-                elif s.name == "Sót K1 (Nay)":
-                    # Only highlight if cell has value
-                    if val and str(val).strip():
-                        styles.append('background-color: #e8f8f5; color: #16a085')  # Green
-                    else:
-                        styles.append('')
-                else:
-                    styles.append('')
-            return styles
-        
-        styled_df = df_anal.style.apply(highlight_cols)
-        
-        # Configure columns for compactness (Force pixel width)
-        anal_config = {
-            "Kỳ": st.column_config.TextColumn("Kỳ", width=70),
-            "List 0 (Thiếu)": st.column_config.TextColumn("List 0 (Thiếu)", width=80),
-            "Sót K0 (N1-N0)": st.column_config.TextColumn("Sót K0 (N1-N0)", width=85),
-            "Sót K1 (Nay)": st.column_config.TextColumn("Sót K1 (Nay)", width=70),
-        }
-        for k in range(2, 8):
-             anal_config[f"Sót K{k}"] = st.column_config.TextColumn(f"Sót K{k}", width=70)
-
-        st.dataframe(
-            styled_df, 
-            height=700, 
-            use_container_width=True, 
-            hide_index=True,
-            column_config=anal_config
-        )
-
+            cols_t2 = ["Kỳ", "Thiếu Đầu", "Dàn K0", "K1", "K2", "K3", "K4", "K5", "K6", "K7"]
+            df_t2 = pd.DataFrame(rows_t2, columns=cols_t2)
+            
+            def highlight_t2(s):
+                styles = []
+                for v in s:
+                    if s.name == "Dàn K0": styles.append('background-color: #e3f2fd; color: #1565c0')
+                    elif str(v).startswith("TRÚNG"): styles.append('background-color: #c8e6c9; color: #2e7d32; font-weight: bold')
+                    else: styles.append('')
+                return styles
+                
+            st.dataframe(
+                df_t2.style.apply(highlight_t2), 
+                height=700, 
+                use_container_width=True, 
+                hide_index=True,
+                column_config={
+                    "Dàn K0": st.column_config.TextColumn("Dàn K0", width=200),
+                    "Kỳ": st.column_config.TextColumn("Kỳ", width=70),
+                    "Thiếu Đầu": st.column_config.TextColumn("Thiếu Đầu", width=70)
+                }
+            )
