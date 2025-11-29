@@ -567,6 +567,18 @@ else:
             curr = processed[i]
             row = [curr["ky"], ",".join(curr["list0"])]
             
+            # Sót K0 (N1-N0): Bridge current row's List 0 with next row's List 0
+            if i + 1 < len(processed):
+                l0_current = curr["list0"]
+                l0_next = processed[i + 1]["list0"]
+                bridge_k0 = bridge_ab(l0_next, l0_current)
+                # Subtract current draw's results
+                bridge_k0 = diff(bridge_k0, curr["res"])
+                row.append(" ".join(bridge_k0))
+            else:
+                row.append("")
+            
+            # Sót K1-K7: Bridge N2-N1 and subtract K1 to K7
             if i + 2 < len(processed):
                 l0_prev1 = processed[i + 1]["list0"]
                 l0_prev2 = processed[i + 2]["list0"]
@@ -585,15 +597,17 @@ else:
             
             rows_anal.append(row)
         
-        cols_anal = ["Kỳ", "List 0 (Thiếu)", "Sót K1 (Nay)", "Sót K2", "Sót K3", "Sót K4", "Sót K5", "Sót K6", "Sót K7"]
+        cols_anal = ["Kỳ", "List 0 (Thiếu)", "Sót K0 (N1-N0)", "Sót K1 (Nay)", "Sót K2", "Sót K3", "Sót K4", "Sót K5", "Sót K6", "Sót K7"]
         df_anal = pd.DataFrame(rows_anal, columns=cols_anal)
         
         # Apply styling
         def highlight_cols(s):
             if s.name == "List 0 (Thiếu)":
                 return ['background-color: #ffebee; color: #c0392b'] * len(s)
+            elif s.name == "Sót K0 (N1-N0)":
+                return ['background-color: #fff3e0; color: #e67e22'] * len(s)  # Orange
             elif s.name == "Sót K1 (Nay)":
-                return ['background-color: #e8f8f5; color: #16a085'] * len(s)
+                return ['background-color: #e8f8f5; color: #16a085'] * len(s)  # Green
             else:
                 return [''] * len(s)
         
@@ -603,6 +617,7 @@ else:
         anal_config = {
             "Kỳ": st.column_config.TextColumn("Kỳ", width=70),
             "List 0 (Thiếu)": st.column_config.TextColumn("List 0 (Thiếu)", width=80),
+            "Sót K0 (N1-N0)": st.column_config.TextColumn("Sót K0 (N1-N0)", width=85),
             "Sót K1 (Nay)": st.column_config.TextColumn("Sót K1 (Nay)", width=70),
         }
         for k in range(2, 8):
