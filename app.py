@@ -161,10 +161,14 @@ st.markdown("""
     }
     /* Compact header */
     div[data-testid="stVerticalBlock"] > div:has(div[data-testid="stHorizontalBlock"]) {
-        background-color: #f8f9fa;
+        background-color: #262730;
         padding: 15px;
         border-radius: 10px;
-        border: 1px solid #dee2e6;
+        border: 1px solid #464b5c;
+    }
+    /* Checkbox spacing */
+    div[data-testid="stCheckbox"] {
+        margin-bottom: 5px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -227,10 +231,23 @@ with col4:
                 else:
                     st.error("Lỗi tải dữ liệu!")
 
-# Prize Selection (Expandable or just visible)
+# Prize Selection
 with st.expander("🎯 CHỌN GIẢI ĐỂ PHÂN TÍCH (Và hiển thị cột)", expanded=True):
-    # Create checkboxes in columns
-    num_cols = 8
+    # Control buttons
+    c1, c2, c3 = st.columns([1, 1, 6])
+    with c1:
+        if st.button("Chọn tất cả"):
+            st.session_state.selected_giai = list(range(1, len(GIAI_LABELS_MB)))
+            st.rerun()
+    with c2:
+        if st.button("Bỏ chọn"):
+            st.session_state.selected_giai = []
+            st.rerun()
+            
+    st.write("")
+    
+    # Create checkboxes in columns (Reduced to 6 columns for better visibility)
+    num_cols = 6
     giai_selected = []
     cols = st.columns(num_cols)
     
