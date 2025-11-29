@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
-import tkinter as tk
-from tkinter import ttk, messagebox
+import streamlit as st
 import requests
 import json
 from collections import Counter
-import tksheet
+import pandas as pd
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from datetime import datetime
@@ -18,16 +17,6 @@ HEADERS = {
     "Referer": "https://www.kqxs88.live/",
 }
 
-COLOR_BG = "#ffffff"       
-COLOR_PANEL_BG = "#f8f9fa" 
-COLOR_HEADER_BG = "#eef0f3" 
-COLOR_ACCENT = "#ff4b4b"
-COLOR_BORDER = "#dee2e6"
-
-FONT_MAIN = ("Segoe UI", 9, "normal")
-FONT_BOLD = ("Segoe UI", 9, "bold")
-FONT_LARGE = ("Segoe UI", 11, "bold")
-
 DAI_API = {
     "Miền Bắc": "https://www.kqxs88.live/api/front/open/lottery/history/list/game?limitNum=60&gameCode=miba",
     "Miền Bắc 75s": "https://www.kqxs88.live/api/front/open/lottery/history/list/game?limitNum=60&gameCode=vnmbmg",
@@ -40,7 +29,7 @@ DAI_API = {
     "Bình Phước": "https://www.kqxs88.live/api/front/open/lottery/history/list/game?limitNum=60&gameCode=biph",
     "Cà Mau": "https://www.kqxs88.live/api/front/open/lottery/history/list/game?limitNum=60&gameCode=cama",
     "Cần Thơ": "https://www.kqxs88.live/api/front/open/lottery/history/list/game?limitNum=60&gameCode=cath",
-    "Đà Lạt": "https://www.kqxs88.live/api/front/open/lottery/history/list/game?limitNum=60&gameCode=dalat", 
+    "Đà Lạt": "https://www.kqxs88.live/api/front/open/lottery/history/list/game?limitNum=60&gameCode=dalat",
     "Đồng Nai": "https://www.kqxs88.live/api/front/open/lottery/history/list/game?limitNum=60&gameCode=dona",
     "Đồng Tháp": "https://www.kqxs88.live/api/front/open/lottery/history/list/game?limitNum=60&gameCode=doth",
     "Hậu Giang": "https://www.kqxs88.live/api/front/open/lottery/history/list/game?limitNum=60&gameCode=hagi",
@@ -71,22 +60,22 @@ DAI_API = {
 
 LICH_QUAY_NAM = {
     "Chủ Nhật": ["Tiền Giang", "Kiên Giang", "Đà Lạt"],
-    "Thứ 2":    ["TP. Hồ Chí Minh", "Đồng Tháp", "Cà Mau"],
-    "Thứ 3":    ["Bến Tre", "Vũng Tàu", "Bạc Liêu"],
-    "Thứ 4":    ["Đồng Nai", "Cần Thơ", "Sóc Trăng"],
-    "Thứ 5":    ["Tây Ninh", "An Giang", "Bình Thuận"],
-    "Thứ 6":    ["Vĩnh Long", "Bình Dương", "Trà Vinh"],
-    "Thứ 7":    ["TP. Hồ Chí Minh", "Long An", "Bình Phước", "Hậu Giang"]
+    "Thứ 2": ["TP. Hồ Chí Minh", "Đồng Tháp", "Cà Mau"],
+    "Thứ 3": ["Bến Tre", "Vũng Tàu", "Bạc Liêu"],
+    "Thứ 4": ["Đồng Nai", "Cần Thơ", "Sóc Trăng"],
+    "Thứ 5": ["Tây Ninh", "An Giang", "Bình Thuận"],
+    "Thứ 6": ["Vĩnh Long", "Bình Dương", "Trà Vinh"],
+    "Thứ 7": ["TP. Hồ Chí Minh", "Long An", "Bình Phước", "Hậu Giang"]
 }
 
 LICH_QUAY_TRUNG = {
     "Chủ Nhật": ["Kon Tum", "Khánh Hòa", "Thừa Thiên Huế"],
-    "Thứ 2":    ["Thừa Thiên Huế", "Phú Yên"],
-    "Thứ 3":    ["Đắk Lắk", "Quảng Nam"],
-    "Thứ 4":    ["Đà Nẵng", "Khánh Hòa"],
-    "Thứ 5":    ["Bình Định", "Quảng Trị", "Quảng Bình"],
-    "Thứ 6":    ["Gia Lai", "Ninh Thuận"],
-    "Thứ 7":    ["Đà Nẵng", "Quảng Ngãi", "Đắk Nông"]
+    "Thứ 2": ["Thừa Thiên Huế", "Phú Yên"],
+    "Thứ 3": ["Đắk Lắk", "Quảng Nam"],
+    "Thứ 4": ["Đà Nẵng", "Khánh Hòa"],
+    "Thứ 5": ["Bình Định", "Quảng Trị", "Quảng Bình"],
+    "Thứ 6": ["Gia Lai", "Ninh Thuận"],
+    "Thứ 7": ["Đà Nẵng", "Quảng Ngãi", "Đắk Nông"]
 }
 
 LICH_QUAY_BAC = {
@@ -112,6 +101,7 @@ GIAI_LABELS_MB = [
 # NETWORK UTILS
 # =============================================================================
 
+@st.cache_resource
 def _get_session():
     s = requests.Session()
     retry = Retry(
@@ -138,264 +128,210 @@ def get_current_day_vietnamese():
     return days[datetime.now().weekday()]
 
 # =============================================================================
-# MAIN APP CLASS
+# STREAMLIT APP
 # =============================================================================
 
-class LotteryApp(tk.Tk):
-    def __init__(self):
-        super().__init__()
-        self.title("Phần Mềm Soi Cầu Đa Năng 3 Miền - Pro Version (Auto Load)")
-        self.geometry("1600x900")
-        self.configure(bg=COLOR_BG)
-        
-        # Style
-        style = ttk.Style(self)
-        style.theme_use('clam')
-        style.configure("TFrame", background=COLOR_BG)
-        style.configure("Panel.TFrame", background=COLOR_PANEL_BG)
-        style.configure("TLabel", background=COLOR_PANEL_BG, foreground="#333", font=FONT_MAIN)
-        style.configure("Header.TLabel", background=COLOR_PANEL_BG, foreground="#333", font=FONT_BOLD)
-        style.configure("TButton", font=FONT_BOLD, background=COLOR_ACCENT, foreground="white", borderwidth=0)
-        style.map("TButton", background=[("active", "#ff6b6b")])
-        style.configure("TCheckbutton", background=COLOR_PANEL_BG, font=("Segoe UI", 9))
-        
-        self.setup_ui()
-        self.cb_region.current(0) 
-        self.on_region_change()   
+st.set_page_config(page_title="Phần Mềm Soi Cầu 3 Miền", layout="wide")
 
-    def setup_ui(self):
-        top_frame = ttk.Frame(self, style="Panel.TFrame")
-        top_frame.pack(side="top", fill="x", pady=(0, 1))
+st.markdown("""
+<style>
+    .main > div {
+        padding-top: 2rem;
+    }
+    .stDataFrame {
+        font-size: 12px;
+    }
+    h1, h2, h3 {
+        color: #ff4b4b;
+    }
+    .block-container {
+        padding-top: 1rem;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-        # --- Khu vực & Đài ---
-        fr_source = ttk.Frame(top_frame, style="Panel.TFrame")
-        fr_source.pack(side="left", padx=15, pady=10)
-        
-        ttk.Label(fr_source, text="KHU VỰC & ĐÀI", style="Header.TLabel").pack(anchor="w")
-        
-        self.cb_region = ttk.Combobox(fr_source, values=["Miền Bắc", "Miền Nam", "Miền Trung"], width=12, state="readonly", font=FONT_MAIN)
-        self.cb_region.pack(side="left", pady=5)
-        self.cb_region.bind('<<ComboboxSelected>>', self.on_region_change)
-        
-        self.cb_station = ttk.Combobox(fr_source, width=25, state="readonly", font=FONT_MAIN)
-        self.cb_station.pack(side="left", padx=5, pady=5)
-        self.cb_station.bind('<<ComboboxSelected>>', lambda e: self.update_data())
-        
-        self.var_today = tk.BooleanVar(value=True)
-        self.chk_today = ttk.Checkbutton(fr_source, text="Lịch hôm nay", variable=self.var_today, command=self.on_region_change)
-        self.chk_today.pack(side="left", padx=5)
-        
-        btn_load = ttk.Button(fr_source, text="TẢI LẠI", command=self.update_data, width=12)
-        btn_load.pack(side="left", padx=10)
+# Title
+st.title("🎰 Phần Mềm Soi Cầu Đa Năng 3 Miền - Pro Version")
 
-        # Separator
-        ttk.Frame(top_frame, width=1, style="Panel.TFrame").pack(side="left", fill="y", padx=10)
+# Initialize session state
+if 'raw_data' not in st.session_state:
+    st.session_state.raw_data = []
+if 'selected_giai' not in st.session_state:
+    st.session_state.selected_giai = [2, 3]  # Default: G2-1, G2-2
 
-        # --- Cấu hình List 0 ---
-        fr_config = ttk.Frame(top_frame, style="Panel.TFrame")
-        fr_config.pack(side="left", fill="y", padx=10, pady=10)
-        
-        ttk.Label(fr_config, text="CHỌN GIẢI ĐỂ PHÂN TÍCH (Và hiển thị cột)", style="Header.TLabel", foreground=COLOR_ACCENT).pack(anchor="w", pady=(0,5))
-        
-        self.fr_checkboxes = ttk.Frame(fr_config, style="Panel.TFrame")
-        self.fr_checkboxes.pack(side="left", padx=0)
-        
-        self.giai_vars = []
-        default_checks = [2, 3]
-        for i, label in enumerate(GIAI_LABELS_MB):
-            var = tk.BooleanVar(value=(i in default_checks))
-            var.trace_add("write", lambda *a: self.refresh_ui())
-            chk = ttk.Checkbutton(self.fr_checkboxes, text=label, variable=var)
-            chk.grid(row=i//9, column=i%9, sticky="w", padx=2)
-            self.giai_vars.append(var)
+# =============================================================================
+# SIDEBAR - Controls
+# =============================================================================
 
-        # --- Info ---
-        fr_info = ttk.Frame(top_frame, style="Panel.TFrame")
-        fr_info.pack(side="right", padx=20, fill="y")
-        self.lbl_info = tk.Label(fr_info, text="Sẵn sàng", font=FONT_LARGE, fg=COLOR_ACCENT, bg=COLOR_PANEL_BG)
-        self.lbl_info.pack(pady=15)
-
-        # MAIN LAYOUT
-        main_body = ttk.Frame(self)
-        main_body.pack(fill="both", expand=True, padx=5, pady=5)
-
-        # LEFT
-        frame_left = ttk.Frame(main_body)
-        frame_left.pack(side="left", fill="y")
-        
-        self.sheet_res = tksheet.Sheet(frame_left, headers=["Kỳ"], width=400, font=FONT_MAIN, header_font=FONT_BOLD)
-        self.sheet_res.pack(fill="both", expand=True)
-        self.sheet_res.enable_bindings()
-
-        # RIGHT
-        frame_right = ttk.Frame(main_body)
-        frame_right.pack(side="left", fill="both", expand=True, padx=(5, 0))
-        
-        cols_anal = ["Kỳ", "List 0 (Thiếu)", "Sót K1 (Nay)", "Sót K2", "Sót K3", "Sót K4", "Sót K5", "Sót K6", "Sót K7"]
-        self.sheet_anal = tksheet.Sheet(frame_right, headers=cols_anal, font=FONT_MAIN, header_font=FONT_BOLD)
-        self.sheet_anal.pack(fill="both", expand=True)
-        self.sheet_anal.enable_bindings()
-        
-    def on_region_change(self, event=None):
-        region = self.cb_region.get()
-        today_str = get_current_day_vietnamese()
-        is_today_filter = self.var_today.get()
-        
-        stations = []
-        if region == "Miền Bắc":
-            lbl_tinh = LICH_QUAY_BAC.get(today_str, "")
-            stations = [f"Miền Bắc ({lbl_tinh})", "Miền Bắc 75s", "Miền Bắc 45s"]
-        elif region == "Miền Nam":
-            if is_today_filter:
-                stations = LICH_QUAY_NAM.get(today_str, [])
-            else:
-                s = set()
-                for lst in LICH_QUAY_NAM.values(): s.update(lst)
-                stations = sorted(list(s))
-        elif region == "Miền Trung":
-            if is_today_filter:
-                stations = LICH_QUAY_TRUNG.get(today_str, [])
-            else:
-                s = set()
-                for lst in LICH_QUAY_TRUNG.values(): s.update(lst)
-                stations = sorted(list(s))
-
-        self.cb_station['values'] = stations
-        if stations:
-            self.cb_station.current(0)
-            self.update_data()
+with st.sidebar:
+    st.header("⚙️ KHU VỰC & ĐÀI")
+    
+    region = st.selectbox("Chọn Khu Vực:", ["Miền Bắc", "Miền Nam", "Miền Trung"], index=0)
+    
+    today_str = get_current_day_vietnamese()
+    use_today_filter = st.checkbox("Lịch hôm nay", value=True)
+    
+    # Get stations based on region
+    stations = []
+    if region == "Miền Bắc":
+        lbl_tinh = LICH_QUAY_BAC.get(today_str, "")
+        stations = [f"Miền Bắc ({lbl_tinh})", "Miền Bắc 75s", "Miền Bắc 45s"]
+    elif region == "Miền Nam":
+        if use_today_filter:
+            stations = LICH_QUAY_NAM.get(today_str, [])
         else:
-            self.cb_station.set("")
-            self.lbl_info.config(text=f"Không có lịch quay {region} hôm nay")
-
-    def update_data(self):
-        station_display = self.cb_station.get()
-        if not station_display: return
-        
-        api_key = station_display
-        if "Miền Bắc" in station_display and "45s" not in station_display and "75s" not in station_display:
-            api_key = "Miền Bắc"
-        
-        url = DAI_API.get(api_key)
-        if not url:
-            for k, v in DAI_API.items():
-                if k == api_key:
-                    url = v
-                    break
-        if not url: return
+            s = set()
+            for lst in LICH_QUAY_NAM.values():
+                s.update(lst)
+            stations = sorted(list(s))
+    elif region == "Miền Trung":
+        if use_today_filter:
+            stations = LICH_QUAY_TRUNG.get(today_str, [])
+        else:
+            s = set()
+            for lst in LICH_QUAY_TRUNG.values():
+                s.update(lst)
+            stations = sorted(list(s))
+    
+    if stations:
+        station = st.selectbox("Chọn Đài:", stations, index=0)
+    else:
+        st.warning(f"Không có lịch quay {region} hôm nay")
+        station = None
+    
+    st.markdown("---")
+    
+    # Prize selection
+    st.subheader("🎯 CHỌN GIẢI ĐỂ PHÂN TÍCH")
+    st.caption("(Và hiển thị cột)")
+    
+    # Create checkboxes in columns
+    num_cols = 3
+    giai_selected = []
+    
+    for start_idx in range(0, len(GIAI_LABELS_MB), num_cols):
+        cols = st.columns(num_cols)
+        for i, col in enumerate(cols):
+            idx = start_idx + i
+            if idx < len(GIAI_LABELS_MB):
+                with col:
+                    default_val = idx in st.session_state.selected_giai
+                    if st.checkbox(GIAI_LABELS_MB[idx], value=default_val, key=f"giai_{idx}"):
+                        giai_selected.append(idx)
+    
+    st.session_state.selected_giai = giai_selected
+    
+    st.markdown("---")
+    
+    # Load button
+    if st.button("🔄 TẢI LẠI", type="primary", use_container_width=True):
+        if station:
+            api_key = station
+            if "Miền Bắc" in station and "45s" not in station and "75s" not in station:
+                api_key = "Miền Bắc"
             
-        self.lbl_info.config(text=f"Đang tải: {station_display}...")
-        self.update() 
-        
-        self.raw_data = http_get_issue_list(url)
-        
-        if not self.raw_data:
-            self.lbl_info.config(text="Lỗi tải dữ liệu!")
-            return
+            url = DAI_API.get(api_key)
+            if url:
+                with st.spinner(f"Đang tải: {station}..."):
+                    st.session_state.raw_data = http_get_issue_list(url)
+                    if st.session_state.raw_data:
+                        st.success(f"✅ Đã tải: {station} ({len(st.session_state.raw_data)} kỳ)")
+                    else:
+                        st.error("❌ Lỗi tải dữ liệu!")
 
-        self.refresh_ui()
-        self.lbl_info.config(text=f"Đã tải: {station_display} ({len(self.raw_data)} kỳ)")
+# =============================================================================
+# MAIN CONTENT
+# =============================================================================
 
-    def refresh_ui(self):
-        if not hasattr(self, 'raw_data') or not self.raw_data:
-            return
-        self.render_result_table()
-        self.recalc_analysis()
-
-    def render_result_table(self):
-        """Vẽ bảng kết quả: Cố định ĐB, các giải khác theo checkbox"""
+if not st.session_state.raw_data:
+    st.info("👆 Vui lòng chọn khu vực, đài và bấm **TẢI LẠI** để bắt đầu")
+else:
+    # Create two columns
+    col_left, col_right = st.columns([1, 2])
+    
+    with col_left:
+        st.subheader("📊 KẾT QUẢ CÁC KỲ")
         
-        # 1. Xác định cột hiển thị
-        # Mặc định luôn có ĐB (Index 0)
-        display_indices = [0] 
+        # Build result table
+        display_indices = [0]  # Always include ĐB
         headers = ["Kỳ", "ĐB"]
         
-        # Duyệt qua các checkbox để thêm cột
-        for i, var in enumerate(self.giai_vars):
-            if i == 0: continue # Bỏ qua checkbox ĐB vì đã thêm thủ công ở trên
-            
-            if var.get():
+        for i in st.session_state.selected_giai:
+            if i != 0:  # Skip ĐB as it's already added
                 display_indices.append(i)
                 headers.append(GIAI_LABELS_MB[i])
         
-        # 2. Xây dựng dữ liệu dòng
         rows_res = []
-        for item in self.raw_data:
+        for item in st.session_state.raw_data:
             d = json.loads(item['detail'])
             prizes_flat = []
-            for f in d: prizes_flat += f.split(',')
+            for f in d:
+                prizes_flat += f.split(',')
             
             row = [item['turnNum']]
-            
-            # Lấy dữ liệu theo index hiển thị
             for idx in display_indices:
                 if idx < len(prizes_flat):
                     row.append(prizes_flat[idx])
                 else:
                     row.append("")
-            
             rows_res.append(row)
-            
-        # 3. Cập nhật bảng
-        self.sheet_res.headers(headers)
-        self.sheet_res.set_sheet_data(rows_res)
-        self.sheet_res.set_all_cell_sizes_to_text(redraw=False)
-        self.sheet_res.column_width(0, 80)
-        self.sheet_res.column_width(1, 60) # Fix size cột ĐB cho đẹp
-        self.sheet_res.redraw()
-
-    def recalc_analysis(self):
-        """Tính toán (vẫn dùng Checkbox ĐB nếu được tích)"""
+        
+        df_res = pd.DataFrame(rows_res, columns=headers)
+        st.dataframe(df_res, height=600, use_container_width=True)
+    
+    with col_right:
+        st.subheader("📈 PHÂN TÍCH LIST 0 & SÓT K1-K7")
+        
+        # Process data for analysis
         processed = []
-
-        for item in self.raw_data:
+        for item in st.session_state.raw_data:
             detail = json.loads(item['detail'])
-            counter = Counter()
             prizes_flat = []
-            for field in detail: prizes_flat += field.split(",")
-
+            for field in detail:
+                prizes_flat += field.split(",")
+            
             g_nums = []
-            idxs = [i for i, v in enumerate(self.giai_vars) if v.get()]
-            for idx in idxs:
+            for idx in st.session_state.selected_giai:
                 if idx < len(prizes_flat):
                     g_nums.extend([ch for ch in prizes_flat[idx].strip() if ch.isdigit()])
-            counter = Counter(g_nums)
             
+            counter = Counter(g_nums)
             counts = [counter.get(str(d), 0) for d in range(10)]
             list0 = [str(i) for i, v in enumerate(counts) if v == 0]
             
             current_los = []
             for lo in prizes_flat:
                 lo = lo.strip()
-                if len(lo)>=2 and lo[-2:].isdigit():
+                if len(lo) >= 2 and lo[-2:].isdigit():
                     current_los.append(lo[-2:])
-
+            
             processed.append({
                 "ky": item['turnNum'],
                 "list0": list0,
                 "res": current_los
             })
-
-        # Logic Cầu
+        
+        # Bridge logic
         def bridge_ab(l1, l2):
             s = set()
             for a in l1:
                 for b in l2:
-                    s.add(a+b)
-                    s.add(b+a)
+                    s.add(a + b)
+                    s.add(b + a)
             return sorted(list(s))
-
+        
         def diff(src, target):
             return sorted(list(set(src) - set(target)))
-
+        
+        # Build analysis table
         rows_anal = []
         for i in range(len(processed)):
             curr = processed[i]
             row = [curr["ky"], ",".join(curr["list0"])]
             
             if i + 2 < len(processed):
-                l0_prev1 = processed[i+1]["list0"]
-                l0_prev2 = processed[i+2]["list0"]
+                l0_prev1 = processed[i + 1]["list0"]
+                l0_prev2 = processed[i + 2]["list0"]
                 current_dan = bridge_ab(l0_prev2, l0_prev1)
                 
                 for k in range(7):
@@ -410,15 +346,18 @@ class LotteryApp(tk.Tk):
                 row.extend([""] * 7)
             
             rows_anal.append(row)
-
-        self.sheet_anal.set_sheet_data(rows_anal)
-        self.sheet_anal.column_width(0, 80)
-        self.sheet_anal.column_width(1, 80)
-        for c in range(2, 9): self.sheet_anal.column_width(c, 130)
-        self.sheet_anal.highlight_columns([1], bg="#ffebee", fg="#c0392b")
-        self.sheet_anal.highlight_columns([2], bg="#e8f8f5", fg="#16a085")
-        self.sheet_anal.redraw()
-
-if __name__ == "__main__":
-    app = LotteryApp()
-    app.mainloop()
+        
+        cols_anal = ["Kỳ", "List 0 (Thiếu)", "Sót K1 (Nay)", "Sót K2", "Sót K3", "Sót K4", "Sót K5", "Sót K6", "Sót K7"]
+        df_anal = pd.DataFrame(rows_anal, columns=cols_anal)
+        
+        # Apply styling
+        def highlight_cols(s):
+            if s.name == "List 0 (Thiếu)":
+                return ['background-color: #ffebee; color: #c0392b'] * len(s)
+            elif s.name == "Sót K1 (Nay)":
+                return ['background-color: #e8f8f5; color: #16a085'] * len(s)
+            else:
+                return [''] * len(s)
+        
+        styled_df = df_anal.style.apply(highlight_cols)
+        st.dataframe(styled_df, height=600, use_container_width=True)
