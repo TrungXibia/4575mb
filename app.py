@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
+import streamlit.components.v1 as components
 import requests
 import json
 from collections import Counter
@@ -290,14 +291,146 @@ with col4:
                 st.session_state.current_station = station
                 st.rerun()
 
-    # Display Time
-    now_str = datetime.now().strftime("%H:%M:%S %d/%m/%Y")
-    st.markdown(f"""
-    <div style="display: flex; align-items: center; justify-content: space-between; height: 100%; font-size: 13px; color: #31333F; margin-top: 5px;">
-        <span>📅 Kỳ: <b>{st.session_state.last_open_time}</b></span>
-        <span>🕒 <b>{now_str}</b></span>
+    # Determine Interval and Next Draw Time Logic
+    interval_seconds = 0
+    draw_time_config = "" # For traditional lotteries (HH:mm)
+    
+    if "75s" in station:
+        interval_seconds = 75
+    elif "45s" in station:
+        interval_seconds = 45
+    else:
+        # Traditional Lottery Schedules
+        if region == "Miền Bắc":
+            draw_time_config = "18:15"
+        elif region == "Miền Nam":
+            draw_time_config = "16:15"
+        elif region == "Miền Trung":
+            draw_time_config = "17:15"
+
+    # Display Time & Countdown (Real-time Clock)
+    clock_html = f"""
+    <style>
+        body {{
+            margin: 0;
+            padding: 0;
+            font-family: "Source Sans Pro", sans-serif;
+            font-size: 13px;
+            background-color: transparent;
+            color: #31333F;
+        }}
+        .container {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-top: 8px;
+        }}
+        .highlight {{
+            color: #ff4b4b;
+            font-weight: bold;
+            font-size: 14px;
+        }}
+        .clock {{
+            color: #0068c9;
+            font-weight: bold;
+            font-size: 14px;
+        }}
+        .countdown {{
+            color: #28a745; /* Green */
+            font-weight: bold;
+            font-size: 14px;
+            margin-left: 10px;
+        }}
+        .label {{
+            font-weight: 600;
+            margin-right: 4px;
+        }}
+    </style>
+    <div class="container">
+        <div>
+            <span class="label">📅 Kỳ:</span>
+            <span class="highlight">{st.session_state.last_open_time}</span>
+        </div>
+        <div>
+            <span class="label">⏳ Sắp quay:</span>
+            <span id="countdown" class="countdown">--:--</span>
+        </div>
+        <div>
+            <span class="label">🕒</span>
+            <span id="clock" class="clock">Loading...</span>
+        </div>
     </div>
-    """, unsafe_allow_html=True)
+    <script>
+        var interval = {interval_seconds};
+        var lastTimeStr = "{st.session_state.last_open_time}"; // Format: YYYY-MM-DD HH:mm:ss
+        var drawTimeConfig = "{draw_time_config}"; // Format: HH:mm
+        
+        function parseDate(str) {{
+            // Handle format YYYY-MM-DD HH:mm:ss for Safari/Firefox compatibility
+            var t = str.split(/[- :]/);
+            return new Date(t[0], t[1]-1, t[2], t[3], t[4], t[5]);
+        }}
+
+        function updateClock() {{
+            var now = new Date();
+            
+            // 1. Update System Clock
+            var timeStr = now.toLocaleTimeString('vi-VN', {{hour12: false}});
+            var dateStr = now.toLocaleDateString('vi-VN');
+            document.getElementById('clock').innerText = timeStr;
+
+            // 2. Update Countdown
+            var targetDate = null;
+            var diff = 0;
+
+            if (interval > 0) {{
+                // Logic for 75s/45s
+                var lastDate = parseDate(lastTimeStr);
+                targetDate = new Date(lastDate.getTime() + interval * 1000);
+                
+                // If target is in the past (data outdated), keep adding interval to find next theoretical draw
+                // or just show "Waiting..." if we strictly follow the last loaded data.
+                // Here we strictly follow last loaded data + interval to prompt user to reload.
+                diff = targetDate - now;
+            }} else if (drawTimeConfig) {{
+                // Logic for Traditional
+                var parts = drawTimeConfig.split(":");
+                targetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), parts[0], parts[1], 0);
+                if (now > targetDate) {{
+                    // If passed today's draw time, target tomorrow
+                    targetDate.setDate(targetDate.getDate() + 1);
+                }}
+                diff = targetDate - now;
+            }}
+
+            var cdEl = document.getElementById('countdown');
+            
+            if (diff > 0) {{
+                var hours = Math.floor(diff / (1000 * 60 * 60));
+                var minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                var seconds = Math.floor((diff % (1000 * 60)) / 1000);
+                
+                var hStr = hours > 0 ? hours.toString().padStart(2, '0') + ':' : '';
+                var mStr = minutes.toString().padStart(2, '0');
+                var sStr = seconds.toString().padStart(2, '0');
+                
+                cdEl.innerText = hStr + mStr + ':' + sStr;
+                cdEl.style.color = "#28a745"; // Green
+            }} else {{
+                if (interval > 0) {{
+                     cdEl.innerText = "Đang quay...";
+                     cdEl.style.color = "#dc3545"; // Red
+                }} else {{
+                     cdEl.innerText = "Đang quay...";
+                     cdEl.style.color = "#dc3545";
+                }}
+            }}
+        }}
+        setInterval(updateClock, 1000);
+        updateClock();
+    </script>
+    """
+    components.html(clock_html, height=40)
 
 # Prize Selection
 with st.expander("🎯 CHỌN GIẢI ĐỂ PHÂN TÍCH", expanded=True):
