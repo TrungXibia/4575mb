@@ -124,9 +124,12 @@ def http_get_issue_list(url: str, timeout: int = 10):
         resp.raise_for_status()
         data = resp.json().get("t", {})
         issue_list = data.get("issueList", [])
+        
+        # Lấy thời gian từ kỳ mới nhất
         latest_time = ""
         if issue_list:
             latest_time = issue_list[0].get('openTime', '')
+            
         return issue_list, latest_time
     except Exception:
         return [], ""
@@ -138,6 +141,7 @@ def load_data(station_name):
     api_key = station_name
     if "Miền Bắc" in station_name and "45s" not in station_name and "75s" not in station_name:
         api_key = "Miền Bắc"
+    
     url = DAI_API.get(api_key)
     if url:
         return http_get_issue_list(url)
@@ -148,20 +152,28 @@ def load_data(station_name):
 # =============================================================================
 
 def generate_cham_tong(list_missing):
+    """Tạo dàn Chạm + Tổng từ list số thiếu"""
     result_set = set()
     for d_str in list_missing:
-        try: d = int(d_str)
-        except: continue
+        try:
+            d = int(d_str)
+        except:
+            continue
+        # Chạm
         for i in range(100):
             s = f"{i:02d}"
-            if str(d) in s: result_set.add(s)
+            if str(d) in s:
+                result_set.add(s)
+        # Tổng
         for i in range(100):
             s = f"{i:02d}"
             digit_sum = (int(s[0]) + int(s[1])) % 10
-            if digit_sum == d: result_set.add(s)
+            if digit_sum == d:
+                result_set.add(s)
     return sorted(list(result_set))
 
 def get_target_results(prizes_flat, use_duoi_db, use_dau_db, use_duoi_g1, use_dau_g1):
+    """Lấy tập hợp kết quả để so sánh (Đuôi/Đầu ĐB/G1)"""
     targets = set()
     if len(prizes_flat) > 0:
         db = prizes_flat[0].strip()
@@ -176,27 +188,24 @@ def get_target_results(prizes_flat, use_duoi_db, use_dau_db, use_duoi_g1, use_da
     return targets
 
 def detect_special_pattern(prize_str):
+    """Kiểm tra giải có <= 3 chữ số duy nhất"""
     prize_str = prize_str.strip()
-    if not prize_str or not prize_str.isdigit(): return False, None
+    if not prize_str or not prize_str.isdigit():
+        return False, None
     unique_digits = set(prize_str)
-    if len(unique_digits) <= 3: return True, prize_str[-2:]
-    else: return False, None
+    num_unique = len(unique_digits)
+    if num_unique <= 3:
+        return True, prize_str[-2:]
+    else:
+        return False, None
 
 def generate_nhi_hop(list_digits):
+    """Tạo dàn nhị hợp từ danh sách các chữ số"""
     result_set = set()
     for d1 in list_digits:
-        for d2 in list_digits: result_set.add(f"{d1}{d2}")
+        for d2 in list_digits:
+            result_set.add(f"{d1}{d2}")
     return sorted(list(result_set))
-
-def get_list_missing(detail, selected_giai):
-    prizes_flat = []
-    for f in detail: prizes_flat += f.split(',')
-    g_nums = []
-    for idx in selected_giai:
-        if idx < len(prizes_flat):
-            g_nums.extend([ch for ch in prizes_flat[idx].strip() if ch.isdigit()])
-    counter = Counter(g_nums)
-    return [str(i) for i, v in enumerate([counter.get(str(d), 0) for d in range(10)]) if v == 0]
 
 # =============================================================================
 # STREAMLIT APP
@@ -204,36 +213,35 @@ def get_list_missing(detail, selected_giai):
 
 st.set_page_config(page_title="Phần Mềm Soi Cầu 3 Miền", layout="wide")
 
+# CSS for Compact UI
 st.markdown("""
 <style>
-    .block-container { padding-top: 0.5rem !important; padding-bottom: 0rem !important; }
-    html, body, [class*="css"] { font-size: 13px; }
-    div[data-testid="stVerticalBlock"] > div { gap: 0.2rem !important; }
-    .stDataFrame { font-size: 12px !important; }
-    h1, h2, h3, h4, h5 { margin-bottom: 0.2rem !important; padding-top: 0 !important; color: #ff4b4b !important; }
-    button[data-baseweb="tab"] { font-size: 14px !important; font-weight: bold !important; }
-    .prediction-box {
-        background-color: #e3f2fd;
-        border: 2px solid #1976d2;
-        border-radius: 8px;
-        padding: 8px;
-        text-align: center;
-        margin-bottom: 5px;
+    .block-container {
+        padding-top: 0.5rem !important;
+        padding-bottom: 0rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+        max-width: 100% !important;
     }
-    .pred-title { color: #0d47a1; font-weight: bold; font-size: 15px; margin-bottom: 5px; text-transform: uppercase; }
-    .freq-row { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 5px; }
-    .freq-item { 
-        background: #fff; 
-        padding: 6px 12px; 
-        border-radius: 6px; 
-        border: 1px solid #bbdefb; 
-        font-size: 14px; 
-        color: #333;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    html, body, [class*="css"] {
+        font-size: 13px;
     }
-    .freq-count { color: #d32f2f; font-weight: bold; margin-left: 4px; }
-    .bt-row { display: flex; justify-content: center; gap: 10px; margin-top: 5px; flex-wrap: wrap; }
-    .bt-item { background: #fff; padding: 4px 8px; border-radius: 4px; border: 1px solid #ccc; font-size: 11px; }
+    div[data-testid="stVerticalBlock"] > div {
+        gap: 0.2rem !important;
+    }
+    .stDataFrame {
+        font-size: 12px !important;
+    }
+    h1, h2, h3, h4, h5 {
+        margin-bottom: 0.2rem !important;
+        padding-top: 0 !important;
+        color: #ff4b4b !important;
+    }
+    /* Tabs */
+    button[data-baseweb="tab"] {
+        font-size: 14px !important;
+        font-weight: bold !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -277,10 +285,12 @@ with col3:
         stations = [f"Miền Bắc ({lbl_tinh})", "Miền Bắc 75s", "Miền Bắc 45s"]
     elif region == "Miền Nam": stations = LICH_QUAY_NAM.get(selected_day, [])
     elif region == "Miền Trung": stations = LICH_QUAY_TRUNG.get(selected_day, [])
+    
     if stations: station = st.selectbox("Đài", stations, index=0, label_visibility="collapsed")
     else: station = st.selectbox("Đài", ["Không có lịch quay"], disabled=True, label_visibility="collapsed")
 
 with col4:
+    # Auto load logic: Check if station changed
     if station and station != "Không có lịch quay":
         if station != st.session_state.get('current_station'):
             with st.spinner(f"Đang tải {station}..."):
@@ -326,21 +336,29 @@ with col4:
         var lastTimeStr = "{st.session_state.last_open_time}"; 
         var drawTimeConfig = "{draw_time_config}";
         var reloadScheduled = false;
+
         function parseDate(str) {{ var t = str.split(/[- :]/); return new Date(t[0], t[1]-1, t[2], t[3], t[4], t[5]); }}
+        
         function triggerReload() {{
             if (!reloadScheduled) {{
                 reloadScheduled = true;
                 setTimeout(function() {{
                     var buttons = window.parent.document.querySelectorAll('button[kind="primary"]');
-                    if (buttons.length > 0) {{ buttons[0].click(); }} 
-                    else {{ var buttons2 = window.parent.document.querySelectorAll('button[data-testid="baseButton-primary"]'); if (buttons2.length > 0) buttons2[0].click(); }}
+                    if (buttons.length > 0) {{
+                        buttons[0].click();
+                    }} else {{
+                        var buttons2 = window.parent.document.querySelectorAll('button[data-testid="baseButton-primary"]');
+                        if (buttons2.length > 0) buttons2[0].click();
+                    }}
                 }}, 4000); 
             }}
         }}
+
         function updateClock() {{
             var now = new Date();
             var targetDate = null;
             var diff = 0;
+            
             if (interval > 0) {{
                 var lastDate = parseDate(lastTimeStr);
                 targetDate = new Date(lastDate.getTime() + interval * 1000);
@@ -351,7 +369,9 @@ with col4:
                 if (now > targetDate) {{ targetDate.setDate(targetDate.getDate() + 1); }}
                 diff = targetDate - now;
             }}
+            
             var cdEl = document.getElementById('countdown');
+            
             if (diff > 0) {{
                 var hours = Math.floor(diff / (1000 * 60 * 60));
                 var minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
@@ -360,56 +380,21 @@ with col4:
                 cdEl.style.color = "#28a745";
                 reloadScheduled = false;
             }} else {{
-                cdEl.innerText = "Đang quay..."; cdEl.style.color = "#dc3545";
-                if (interval > 0 || Math.abs(diff) < 60000) {{ triggerReload(); }}
+                cdEl.innerText = "Đang quay..."; 
+                cdEl.style.color = "#dc3545";
+                if (interval > 0 || Math.abs(diff) < 60000) {{ 
+                    triggerReload();
+                }}
             }}
         }}
-        setInterval(updateClock, 1000); updateClock();
+        setInterval(updateClock, 1000); 
+        updateClock();
     </script>
     """
     components.html(clock_html, height=40)
 
-# =============================================================================
-# FREQUENCY STATISTICS BLOCK (N-4 to N-2) - COMPACT VERSION
-# =============================================================================
-
-if st.session_state.raw_data and len(st.session_state.raw_data) >= 4:
-    # Lấy dữ liệu N-2, N-3, N-4
-    target_indices = [1, 2, 3]
-    all_missing_digits = []
-    
-    for idx in target_indices:
-        item = st.session_state.raw_data[idx]
-        d = json.loads(item['detail'])
-        # Lấy List 0
-        missing_list = get_list_missing(d, st.session_state.selected_giai)
-        all_missing_digits.extend(missing_list)
-        
-    # Đếm tần suất
-    counts = Counter(all_missing_digits)
-    # Sắp xếp: Số xuất hiện nhiều nhất đứng trước. Nếu bằng nhau thì số nhỏ đứng trước.
-    sorted_counts = sorted(counts.items(), key=lambda x: (-x[1], x[0]))
-    
-    # Chỉ lấy ra danh sách số (bỏ qua số lần count)
-    final_digits = [digit for digit, count in sorted_counts]
-    
-    # Tạo chuỗi hiển thị
-    result_str = " - ".join(final_digits) if final_digits else "Không có dữ liệu"
-    
-    # Lấy thông tin kỳ
-    last_issue = st.session_state.raw_data[1]['turnNum']
-    first_issue = st.session_state.raw_data[3]['turnNum']
-
-    st.markdown(f"""
-    <div class="prediction-box">
-        <div class="pred-title">📊 TOP LIST 0 (TỪ {first_issue} ĐẾN {last_issue})</div>
-        <div class="pred-nums">{result_str}</div>
-    </div>
-    """, unsafe_allow_html=True)
-else:
-    st.info("Đang chờ đủ dữ liệu để thống kê (cần ít nhất 4 kỳ)...")
-
 st.markdown("---")
+
 # =============================================================================
 # TABS LOGIC
 # =============================================================================
@@ -501,26 +486,19 @@ with tab1:
                 curr = processed[i]
                 row = [curr["ky"], ",".join(curr["list0"])]
                 
-                # Sót K0
+                # K0
                 if i+1 < len(processed):
-                    l0_curr = processed[i]["list0"]
-                    l0_next = processed[i+1]["list0"]
-                    dan_k0 = bridge_ab(l0_next, l0_curr)
-                    sot_k0 = diff(dan_k0, curr["res"])
-                    row.append(" ".join(sot_k0))
-                else:
-                    row.append("")
-                    sot_k0 = []
+                    k0 = diff(bridge_ab(processed[i+1]["list0"], curr["list0"]), curr["res"])
+                    row.append(" ".join(k0))
+                else: row.append("")
                 
-                # Sót K1-K7 (FIXED)
+                # K1-K7
                 if i>0 and i+1 < len(processed):
-                    current_remains = sot_k0
-                    for k in range(1, 8):
+                    dan = bridge_ab(processed[i+1]["list0"], processed[i]["list0"])
+                    for k in range(7):
                         t_idx = i - k
                         if t_idx < 0: row.append("")
-                        else:
-                            current_remains = diff(current_remains, processed[t_idx]["res"])
-                            row.append(" ".join(current_remains))
+                        else: row.append(" ".join(diff(dan, processed[t_idx]["res"])))
                 else: row.extend([""]*7)
                 rows_anal.append(row)
             
@@ -562,6 +540,7 @@ with tab2:
         t2_left, t2_right = st.columns([2, 6])
         
         with t2_left:
+            # Simple result table
             rows_simple = []
             for item in st.session_state.raw_data:
                 d = json.loads(item['detail'])
@@ -582,6 +561,7 @@ with tab2:
             st.dataframe(df_simple, height=700, use_container_width=True, hide_index=True, column_config=simple_config)
             
         with t2_right:
+            # Analysis Logic
             processed_data = []
             for item in st.session_state.raw_data:
                 d = json.loads(item['detail'])
@@ -597,9 +577,12 @@ with tab2:
                 curr = processed_data[i]
                 dan = generate_cham_tong(curr["missing"])
                 row = [curr["ky"], ",".join(curr["missing"]), " ".join(dan)]
+                
+                # Check hits K1-K7
                 for k in range(1, 8):
                     target_idx = i - k
-                    if target_idx < 0: row.append("")
+                    if target_idx < 0:
+                        row.append("")
                     else:
                         target_data = processed_data[target_idx]
                         targets = get_target_results(
@@ -631,7 +614,13 @@ with tab2:
                     else: styles.append('')
                 return styles
                 
-            st.dataframe(df_t2.style.apply(highlight_t2), height=700, use_container_width=True, hide_index=True, column_config=t2_config)
+            st.dataframe(
+                df_t2.style.apply(highlight_t2), 
+                height=700, 
+                use_container_width=True, 
+                hide_index=True,
+                column_config=t2_config
+            )
 
 # -----------------------------------------------------------------------------
 # TAB 3: LÔ LẠ & PATTERN
@@ -646,31 +635,50 @@ with tab3:
         t3_left, t3_right = st.columns([2, 6])
 
         with t3_left:
+            # Result table showing all Lô Ra (2 digits)
             rows_res = []
             for item in st.session_state.raw_data:
                 d = json.loads(item['detail'])
                 prizes_flat = []
                 for f in d: prizes_flat += f.split(',')
                 db = prizes_flat[0] if len(prizes_flat) > 0 else ""
+                
+                # Get all 2-digit results
                 current_los = []
                 for lo in prizes_flat:
                     lo = lo.strip()
-                    if len(lo) >= 2 and lo[-2:].isdigit(): current_los.append(lo[-2:])
+                    if len(lo) >= 2 and lo[-2:].isdigit():
+                        current_los.append(lo[-2:])
                 lo_ra = " ".join(sorted(set(current_los)))
                 rows_res.append([item['turnNum'], db, lo_ra])
             
             df_t3_res = pd.DataFrame(rows_res, columns=["Kỳ", "ĐB", "Lô Ra"])
-            st.dataframe(df_t3_res, height=700, use_container_width=True, hide_index=True, column_config={"Kỳ": st.column_config.TextColumn("Kỳ", width=30), "ĐB": st.column_config.TextColumn("ĐB", width=30), "Lô Ra": st.column_config.TextColumn("Lô Ra", width="large")})
+            st.dataframe(
+                df_t3_res,
+                height=700,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Kỳ": st.column_config.TextColumn("Kỳ", width=30),
+                    "ĐB": st.column_config.TextColumn("ĐB", width=30),
+                    "Lô Ra": st.column_config.TextColumn("Lô Ra", width="large")
+                }
+            )
 
         with t3_right:
+            # Analysis Logic for Tab 3
             max_prize_index = 9 if "Bắc" in region else 13
+            
             processed = []
             for item in st.session_state.raw_data:
                 detail = json.loads(item['detail'])
                 prizes_flat = []
-                for f in d: prizes_flat += f.split(',')
+                for field in detail: prizes_flat += field.split(",")
+                
                 special_los = []
                 day_digit_counts = Counter()
+                
+                # Analyze prizes
                 for idx, prize in enumerate(prizes_flat):
                     if idx > max_prize_index: break
                     is_special, lo = detect_special_pattern(prize)
@@ -679,19 +687,26 @@ with tab3:
                         if prize_digits:
                             special_los.append("".join(sorted(list(prize_digits))))
                             for d in prize_digits: day_digit_counts[d] += 1
+                
                 list0 = sorted(list(set(special_los)))
+                
+                # Top Freq Logic
                 dan_nhi_hop = []
                 if day_digit_counts:
                     unique_counts = sorted(list(set(day_digit_counts.values())), reverse=True)
                     l1 = [d for d, c in day_digit_counts.items() if c == unique_counts[0]]
                     l2 = []
-                    if len(unique_counts) > 1: l2 = [d for d, c in day_digit_counts.items() if c == unique_counts[1]]
+                    if len(unique_counts) > 1:
+                        l2 = [d for d, c in day_digit_counts.items() if c == unique_counts[1]]
+                    
                     final_digits = l1 + l2 if len(l1)+len(l2) == 2 else l1
                     if final_digits: dan_nhi_hop = generate_nhi_hop(sorted(final_digits))
+                
                 current_los = []
                 for lo in prizes_flat:
                     lo = lo.strip()
                     if len(lo) >= 2 and lo[-2:].isdigit(): current_los.append(lo[-2:])
+                
                 processed.append({"ky": item['turnNum'], "list0": list0, "dan": dan_nhi_hop, "res": current_los})
 
             def diff(src, target): return sorted(list(set(src) - set(target)))
@@ -700,27 +715,33 @@ with tab3:
             for i in range(len(processed)):
                 curr = processed[i]
                 row = [curr["ky"], ",".join(curr["list0"]), " ".join(curr["dan"])]
+                
+                # Check K1-K10
                 if curr["dan"]:
                     current_dan = curr["dan"][:]
                     for k in range(1, 11):
                         target_idx = i - k
-                        if target_idx < 0: row.append("")
+                        if target_idx < 0:
+                            row.append("")
                         else:
                             res_target = processed[target_idx]["res"]
                             current_dan = diff(current_dan, res_target)
                             row.append(" ".join(current_dan) if current_dan else "-")
-                else: row.extend([""] * 10)
+                else:
+                    row.extend([""] * 10)
                 rows_anal.append(row)
             
             cols_anal = ["Kỳ", "Lô Lạ", "Dàn Nhị Hợp"] + [f"K{k}" for k in range(1, 11)]
             df_anal = pd.DataFrame(rows_anal, columns=cols_anal)
             
+            # Styling
             t3_config = {
                 "Kỳ": st.column_config.TextColumn("Kỳ", width=30),
                 "Lô Lạ": st.column_config.TextColumn("Lô Lạ", width=50),
                 "Dàn Nhị Hợp": st.column_config.TextColumn("Dàn Nhị Hợp", width="medium"),
             }
-            for k in range(1, 11): t3_config[f"K{k}"] = st.column_config.TextColumn(f"K{k}", width=50)
+            for k in range(1, 11):
+                t3_config[f"K{k}"] = st.column_config.TextColumn(f"K{k}", width=50)
 
             k_colors = ["#F1F8E9", "#DCEDC8", "#C5E1A5", "#AED581", "#9CCC65", "#8BC34A", "#7CB342", "#689F38", "#558B2F", "#33691E"]
 
@@ -732,11 +753,18 @@ with tab3:
                     elif s.name.startswith("K"):
                         try:
                             idx = int(s.name[1:]) - 1
-                            if v and v.strip() != "" and v.strip() != "-": styles.append(f'background-color: {k_colors[idx]}; color: black')
-                            else: styles.append('')
+                            if v and v.strip() != "" and v.strip() != "-":
+                                styles.append(f'background-color: {k_colors[idx]}; color: black')
+                            else:
+                                styles.append('')
                         except: styles.append('')
                     else: styles.append('')
                 return styles
 
-            st.dataframe(df_anal.style.apply(highlight_t3), height=700, use_container_width=True, hide_index=True, column_config=t3_config)
-
+            st.dataframe(
+                df_anal.style.apply(highlight_t3),
+                height=700,
+                use_container_width=True,
+                hide_index=True,
+                column_config=t3_config
+            )
