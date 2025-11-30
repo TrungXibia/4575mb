@@ -124,9 +124,12 @@ def http_get_issue_list(url: str, timeout: int = 10):
         resp.raise_for_status()
         data = resp.json().get("t", {})
         issue_list = data.get("issueList", [])
+        
+        # Lấy thời gian từ kỳ mới nhất
         latest_time = ""
         if issue_list:
             latest_time = issue_list[0].get('openTime', '')
+            
         return issue_list, latest_time
     except Exception:
         return [], ""
@@ -138,6 +141,7 @@ def load_data(station_name):
     api_key = station_name
     if "Miền Bắc" in station_name and "45s" not in station_name and "75s" not in station_name:
         api_key = "Miền Bắc"
+    
     url = DAI_API.get(api_key)
     if url:
         return http_get_issue_list(url)
@@ -205,28 +209,57 @@ def generate_prediction(raw_data, selected_giai):
     missing_heads = [str(i) for i, v in enumerate([counter.get(str(d), 0) for d in range(10)]) if v == 0]
     
     # 2. Tạo dàn dự đoán (10-12 số)
-    # Priority 1: Dàn Nhị Hợp của chính các số thiếu (Ghép xiên)
-    # Priority 2: Các số bắt đầu bằng các đầu thiếu (Ưu tiên đầu câm)
-    
     top_picks = []
-    
-    # a) Nhị hợp thiếu (Vd thiếu 2,5 -> 22,25,52,55)
     nhi_hop = generate_nhi_hop(missing_heads)
     top_picks.extend(nhi_hop)
-    
-    # b) Lấy thêm các số Đầu = Số thiếu, đuôi = (0, 1, ... 9) để đủ 12 số
-    # Sắp xếp ưu tiên: Lấy số nhỏ đến lớn
     backup_picks = []
     for h in missing_heads:
         for t in range(10):
             num = f"{h}{t}"
-            if num not in top_picks:
-                backup_picks.append(num)
-                
-    # Gộp và cắt lấy 12 số
+            if num not in top_picks: backup_picks.append(num)
     final_prediction = (top_picks + backup_picks)[:12]
-    
     return missing_heads, sorted(final_prediction)
+
+def backtest_prediction(raw_data, selected_giai, steps=2):
+    """
+    Test lại thuật toán dự đoán cho 2 kỳ quá khứ gần nhất.
+    Input: Dữ liệu toàn bộ.
+    Output: List kết quả (Kỳ, Số trúng, Tổng trúng).
+    """
+    results = []
+    if len(raw_data) < steps + 1: return []
+
+    for i in range(1, steps + 1):
+        # i=1: Kỳ vừa quay xong (so với kỳ trước đó nữa).
+        # i=2: Kỳ trước đó.
+        
+        # 1. Giả lập quá khứ: Dữ liệu tính toán bắt đầu từ index i
+        # Dự đoán cho kỳ index i-1
+        hist_data = raw_data[i:] 
+        _, pred_nums = generate_prediction(hist_data, selected_giai)
+        
+        # 2. Lấy kết quả thực tế của kỳ index i-1
+        target_issue = raw_data[i-1]
+        target_detail = json.loads(target_issue['detail'])
+        target_prizes = []
+        for f in target_detail: target_prizes += f.split(',')
+        
+        # Lấy tất cả lô 2 số
+        actual_los = set()
+        for lo in target_prizes:
+            if len(lo) >= 2 and lo[-2:].isdigit():
+                actual_los.add(lo[-2:])
+        
+        # 3. So sánh
+        hits = [n for n in pred_nums if n in actual_los]
+        
+        results.append({
+            "issue": target_issue['turnNum'],
+            "pred": pred_nums,
+            "hits": hits,
+            "count": len(hits)
+        })
+    return results
 
 # =============================================================================
 # STREAMLIT APP
@@ -249,11 +282,13 @@ st.markdown("""
         border-radius: 8px;
         padding: 10px;
         text-align: center;
-        margin-bottom: 10px;
+        margin-bottom: 5px;
     }
     .pred-title { color: #d32f2f; font-weight: bold; font-size: 16px; margin-bottom: 5px; }
     .pred-nums { color: #1565c0; font-weight: bold; font-size: 20px; letter-spacing: 1px; }
     .pred-missing { color: #555; font-style: italic; font-size: 13px; }
+    .backtest-text { font-size: 11px; color: #666; margin-top: 5px; }
+    .backtest-hit { color: #2e7d32; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -394,15 +429,26 @@ with col4:
 # =============================================================================
 
 if st.session_state.raw_data:
+    # 1. Prediction for current/next period
     p_missing, p_nums = generate_prediction(st.session_state.raw_data, st.session_state.selected_giai)
     pred_str = " - ".join(p_nums) if p_nums else "Đang chờ dữ liệu..."
     missing_str = ", ".join(p_missing) if p_missing else "Không có"
     
+    # 2. Backtest 2 previous periods
+    bt_results = backtest_prediction(st.session_state.raw_data, st.session_state.selected_giai, steps=2)
+    
+    bt_html = ""
+    for item in bt_results:
+        hit_str = f"Nổ {item['count']} nháy ({', '.join(item['hits'])})" if item['count'] > 0 else "Trượt"
+        color = "green" if item['count'] > 0 else "red"
+        bt_html += f"<span style='margin-right: 15px;'>Kỳ {item['issue']}: <span style='color:{color}; font-weight:bold;'>{hit_str}</span></span>"
+
     st.markdown(f"""
     <div class="prediction-box">
         <div class="pred-title">💎 DỰ ĐOÁN VIP KỲ TỚI (Dựa trên Đầu Thiếu & Nhị Hợp)</div>
         <div class="pred-nums">{pred_str}</div>
         <div class="pred-missing">⚠️ Các đầu số đang bị nén (Thiếu): {missing_str}</div>
+        <div class="backtest-text">🔍 Test nhanh 2 kỳ trước: {bt_html}</div>
     </div>
     """, unsafe_allow_html=True)
 
