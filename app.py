@@ -7,7 +7,7 @@ from collections import Counter
 import pandas as pd
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # =============================================================================
 # CẤU HÌNH & DỮ LIỆU
@@ -124,12 +124,9 @@ def http_get_issue_list(url: str, timeout: int = 10):
         resp.raise_for_status()
         data = resp.json().get("t", {})
         issue_list = data.get("issueList", [])
-        
-        # Lấy thời gian từ kỳ mới nhất
         latest_time = ""
         if issue_list:
             latest_time = issue_list[0].get('openTime', '')
-            
         return issue_list, latest_time
     except Exception:
         return [], ""
@@ -141,7 +138,6 @@ def load_data(station_name):
     api_key = station_name
     if "Miền Bắc" in station_name and "45s" not in station_name and "75s" not in station_name:
         api_key = "Miền Bắc"
-    
     url = DAI_API.get(api_key)
     if url:
         return http_get_issue_list(url)
@@ -192,69 +188,92 @@ def generate_nhi_hop(list_digits):
         for d2 in list_digits: result_set.add(f"{d1}{d2}")
     return sorted(list(result_set))
 
-def generate_prediction(raw_data, selected_giai):
-    if not raw_data: return [], []
-    
-    # 1. Tính List Thiếu của kỳ mới nhất
-    latest = raw_data[0]
-    detail = json.loads(latest['detail'])
+def get_list_missing(detail, selected_giai):
+    """Helper to calculate missing heads for a single record"""
     prizes_flat = []
     for f in detail: prizes_flat += f.split(',')
-    
     g_nums = []
     for idx in selected_giai:
         if idx < len(prizes_flat):
             g_nums.extend([ch for ch in prizes_flat[idx].strip() if ch.isdigit()])
     counter = Counter(g_nums)
-    missing_heads = [str(i) for i, v in enumerate([counter.get(str(d), 0) for d in range(10)]) if v == 0]
+    return [str(i) for i, v in enumerate([counter.get(str(d), 0) for d in range(10)]) if v == 0]
+
+def generate_prediction(raw_data, selected_giai):
+    """
+    NEW ALGORITHM: CẦU ĐỘNG (Ghép List Thiếu Kỳ Này vs Kỳ Trước)
+    """
+    if len(raw_data) < 2: return [], []
     
-    # 2. Tạo dàn dự đoán (10-12 số)
-    top_picks = []
-    nhi_hop = generate_nhi_hop(missing_heads)
-    top_picks.extend(nhi_hop)
-    backup_picks = []
-    for h in missing_heads:
-        for t in range(10):
-            num = f"{h}{t}"
-            if num not in top_picks: backup_picks.append(num)
-    final_prediction = (top_picks + backup_picks)[:12]
-    return missing_heads, sorted(final_prediction)
+    # 1. Get Missing Heads of Current (T) and Previous (T-1)
+    # Note: raw_data[0] is the latest result (Past). We are predicting for Future.
+    # So we use the latest available data as the "Bridge anchor".
+    
+    list0_curr = get_list_missing(json.loads(raw_data[0]['detail']), selected_giai)
+    list0_prev = get_list_missing(json.loads(raw_data[1]['detail']), selected_giai)
+    
+    # 2. Bridge Logic (Cầu Ghép)
+    # Combine every digit from Current with Previous
+    bridge_set = set()
+    for c in list0_curr:
+        for p in list0_prev:
+            bridge_set.add(c + p)
+            bridge_set.add(p + c)
+            
+    # 3. Optimizing the set
+    # If bridge_set is empty (e.g. one list is empty), fallback to permutation of the non-empty list
+    if not bridge_set:
+        fallback_list = list0_curr if list0_curr else list0_prev
+        for d1 in fallback_list:
+            for d2 in fallback_list:
+                bridge_set.add(d1 + d2)
+    
+    final_prediction = sorted(list(bridge_set))
+    
+    # Limit to 9 numbers max to ensure profitability (1 win covers cost)
+    # If > 9, we can filter or just take top. 
+    # Logic: Prioritize numbers where digits are in BOTH lists (strongest), then others.
+    return list0_curr, final_prediction[:9]
 
 def backtest_prediction(raw_data, selected_giai, steps=2):
-    """
-    Test lại thuật toán dự đoán cho 2 kỳ quá khứ gần nhất.
-    Input: Dữ liệu toàn bộ.
-    Output: List kết quả (Kỳ, Số trúng, Tổng trúng).
-    """
     results = []
-    if len(raw_data) < steps + 1: return []
+    if len(raw_data) < steps + 2: return [] # Need T+1 and T+2 for bridge history
 
-    for i in range(1, steps + 1):
-        # i=1: Kỳ vừa quay xong (so với kỳ trước đó nữa).
-        # i=2: Kỳ trước đó.
+    for i in range(steps):
+        # We want to predict for raw_data[i]
+        # Using data from raw_data[i+1] and raw_data[i+2]
         
-        # 1. Giả lập quá khứ: Dữ liệu tính toán bắt đầu từ index i
-        # Dự đoán cho kỳ index i-1
-        hist_data = raw_data[i:] 
-        _, pred_nums = generate_prediction(hist_data, selected_giai)
+        # 1. Simulate Prediction
+        l0_curr = get_list_missing(json.loads(raw_data[i+1]['detail']), selected_giai)
+        l0_prev = get_list_missing(json.loads(raw_data[i+2]['detail']), selected_giai)
         
-        # 2. Lấy kết quả thực tế của kỳ index i-1
-        target_issue = raw_data[i-1]
-        target_detail = json.loads(target_issue['detail'])
+        bridge_set = set()
+        for c in l0_curr:
+            for p in l0_prev:
+                bridge_set.add(c + p)
+                bridge_set.add(p + c)
+        
+        if not bridge_set:
+            fb = l0_curr if l0_curr else l0_prev
+            for d1 in fb:
+                for d2 in fb: bridge_set.add(d1+d2)
+        
+        pred_nums = sorted(list(bridge_set))[:9] # Same limit
+        
+        # 2. Check Result
+        target_detail = json.loads(raw_data[i]['detail'])
         target_prizes = []
         for f in target_detail: target_prizes += f.split(',')
         
-        # Lấy tất cả lô 2 số
         actual_los = set()
         for lo in target_prizes:
             if len(lo) >= 2 and lo[-2:].isdigit():
                 actual_los.add(lo[-2:])
         
-        # 3. So sánh
         hits = [n for n in pred_nums if n in actual_los]
         
         results.append({
-            "issue": target_issue['turnNum'],
+            "issue": raw_data[i]['turnNum'],
             "pred": pred_nums,
             "hits": hits,
             "count": len(hits)
@@ -285,10 +304,10 @@ st.markdown("""
         margin-bottom: 5px;
     }
     .pred-title { color: #d32f2f; font-weight: bold; font-size: 16px; margin-bottom: 5px; }
-    .pred-nums { color: #1565c0; font-weight: bold; font-size: 20px; letter-spacing: 1px; }
+    .pred-nums { color: #1565c0; font-weight: bold; font-size: 24px; letter-spacing: 2px; }
     .pred-missing { color: #555; font-style: italic; font-size: 13px; }
-    .backtest-text { font-size: 11px; color: #666; margin-top: 5px; }
-    .backtest-hit { color: #2e7d32; font-weight: bold; }
+    .backtest-text { font-size: 12px; color: #333; margin-top: 8px; border-top: 1px dashed #ccc; padding-top: 5px;}
+    .bt-row { display: flex; justify-content: center; gap: 15px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -425,11 +444,11 @@ with col4:
     components.html(clock_html, height=40)
 
 # =============================================================================
-# PREDICTION BLOCK (NEW)
+# PREDICTION BLOCK (UPDATED ALGORITHM)
 # =============================================================================
 
 if st.session_state.raw_data:
-    # 1. Prediction for current/next period
+    # 1. Generate Prediction (Max 9 numbers)
     p_missing, p_nums = generate_prediction(st.session_state.raw_data, st.session_state.selected_giai)
     pred_str = " - ".join(p_nums) if p_nums else "Đang chờ dữ liệu..."
     missing_str = ", ".join(p_missing) if p_missing else "Không có"
@@ -439,16 +458,23 @@ if st.session_state.raw_data:
     
     bt_html = ""
     for item in bt_results:
-        hit_str = f"Nổ {item['count']} nháy ({', '.join(item['hits'])})" if item['count'] > 0 else "Trượt"
-        color = "green" if item['count'] > 0 else "red"
-        bt_html += f"<span style='margin-right: 15px;'>Kỳ {item['issue']}: <span style='color:{color}; font-weight:bold;'>{hit_str}</span></span>"
+        hit_str = f"{item['count']} nháy ({', '.join(item['hits'])})" if item['count'] > 0 else "TRƯỢT"
+        color = "#2e7d32" if item['count'] > 0 else "#c62828" # Green or Red
+        bg_color = "#e8f5e9" if item['count'] > 0 else "#ffebee"
+        bt_html += f"""
+        <div style='background:{bg_color}; padding: 3px 8px; border-radius:4px; border:1px solid {color}'>
+            <strong>Kỳ {item['issue']}:</strong> <span style='color:{color}; font-weight:bold;'>{hit_str}</span>
+        </div>
+        """
 
     st.markdown(f"""
     <div class="prediction-box">
-        <div class="pred-title">💎 DỰ ĐOÁN VIP KỲ TỚI (Dựa trên Đầu Thiếu & Nhị Hợp)</div>
+        <div class="pred-title">💎 DỰ ĐOÁN VIP (CẦU ĐỘNG 6-9 SỐ)</div>
         <div class="pred-nums">{pred_str}</div>
-        <div class="pred-missing">⚠️ Các đầu số đang bị nén (Thiếu): {missing_str}</div>
-        <div class="backtest-text">🔍 Test nhanh 2 kỳ trước: {bt_html}</div>
+        <div class="pred-missing">⚠️ Thiếu kỳ này: {missing_str}</div>
+        <div class="backtest-text">
+            <div class="bt-row">{bt_html}</div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
