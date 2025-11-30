@@ -7,7 +7,7 @@ from collections import Counter
 import pandas as pd
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # =============================================================================
 # CẤU HÌNH & DỮ LIỆU
@@ -188,97 +188,87 @@ def generate_nhi_hop(list_digits):
         for d2 in list_digits: result_set.add(f"{d1}{d2}")
     return sorted(list(result_set))
 
-def get_list_missing(detail, selected_giai):
-    """Helper to calculate missing heads for a single record"""
+def get_digits_from_period(detail_str, selected_giai):
+    """Extract all digits from selected prizes in a period"""
+    detail = json.loads(detail_str)
+    prizes_flat = []
+    for f in detail: prizes_flat += f.split(',')
+    
+    digits = set()
+    for idx in selected_giai:
+        if idx < len(prizes_flat):
+            val = prizes_flat[idx].strip()
+            for d in val:
+                if d.isdigit(): digits.add(d)
+    return digits
+
+def generate_goc_thua_prediction(raw_data, selected_giai, offset_1=1, offset_2=2):
+    """
+    Tạo dàn từ Cầu Gốc & Thừa của 2 kỳ (N-offset_1 và N-offset_2).
+    Input: raw_data list.
+    Return: (Set Gốc, Set Thừa, Dàn Dự Đoán)
+    """
+    if len(raw_data) <= max(offset_1, offset_2): return [], [], []
+    
+    # Lấy tập hợp chữ số của 2 kỳ
+    digits_A = get_digits_from_period(raw_data[offset_1]['detail'], selected_giai)
+    digits_B = get_digits_from_period(raw_data[offset_2]['detail'], selected_giai)
+    
+    # 1. Tìm Gốc (Common) và Thừa (Unique)
+    goc = sorted(list(digits_A.intersection(digits_B)))
+    thua = sorted(list(digits_A.symmetric_difference(digits_B)))
+    
+    # 2. Tạo Dàn
+    dan = set()
+    
+    # a) Gốc + Thừa (và đảo)
+    for g in goc:
+        for t in thua:
+            dan.add(f"{g}{t}")
+            dan.add(f"{t}{g}")
+            
+    # b) Nhị hợp Gốc (Gốc + Gốc)
+    for g1 in goc:
+        for g2 in goc:
+            dan.add(f"{g1}{g2}")
+            
+    return goc, thua, sorted(list(dan))
+
+# Used for the header prediction (Tab 2 logic)
+def generate_prediction_header(raw_data, selected_giai):
+    if len(raw_data) < 2: return [], []
+    # Logic: Bridge List Thiếu T vs T-1
+    l0_curr = [] # Placeholder logic, copying simpler function from before
+    detail = json.loads(raw_data[0]['detail'])
     prizes_flat = []
     for f in detail: prizes_flat += f.split(',')
     g_nums = []
     for idx in selected_giai:
-        if idx < len(prizes_flat):
-            g_nums.extend([ch for ch in prizes_flat[idx].strip() if ch.isdigit()])
+        if idx < len(prizes_flat): g_nums.extend([ch for ch in prizes_flat[idx].strip() if ch.isdigit()])
     counter = Counter(g_nums)
-    return [str(i) for i, v in enumerate([counter.get(str(d), 0) for d in range(10)]) if v == 0]
+    l0_curr = [str(i) for i, v in enumerate([counter.get(str(d), 0) for d in range(10)]) if v == 0]
+    
+    detail_prev = json.loads(raw_data[1]['detail'])
+    prizes_flat_prev = []
+    for f in detail_prev: prizes_flat_prev += f.split(',')
+    g_nums_prev = []
+    for idx in selected_giai:
+        if idx < len(prizes_flat_prev): g_nums_prev.extend([ch for ch in prizes_flat_prev[idx].strip() if ch.isdigit()])
+    counter_prev = Counter(g_nums_prev)
+    l0_prev = [str(i) for i, v in enumerate([counter_prev.get(str(d), 0) for d in range(10)]) if v == 0]
 
-def generate_prediction(raw_data, selected_giai):
-    """
-    NEW ALGORITHM: CẦU ĐỘNG (Ghép List Thiếu Kỳ Này vs Kỳ Trước)
-    """
-    if len(raw_data) < 2: return [], []
-    
-    # 1. Get Missing Heads of Current (T) and Previous (T-1)
-    # Note: raw_data[0] is the latest result (Past). We are predicting for Future.
-    # So we use the latest available data as the "Bridge anchor".
-    
-    list0_curr = get_list_missing(json.loads(raw_data[0]['detail']), selected_giai)
-    list0_prev = get_list_missing(json.loads(raw_data[1]['detail']), selected_giai)
-    
-    # 2. Bridge Logic (Cầu Ghép)
-    # Combine every digit from Current with Previous
     bridge_set = set()
-    for c in list0_curr:
-        for p in list0_prev:
+    for c in l0_curr:
+        for p in l0_prev:
             bridge_set.add(c + p)
             bridge_set.add(p + c)
             
-    # 3. Optimizing the set
-    # If bridge_set is empty (e.g. one list is empty), fallback to permutation of the non-empty list
     if not bridge_set:
-        fallback_list = list0_curr if list0_curr else list0_prev
-        for d1 in fallback_list:
-            for d2 in fallback_list:
-                bridge_set.add(d1 + d2)
-    
-    final_prediction = sorted(list(bridge_set))
-    
-    # Limit to 9 numbers max to ensure profitability (1 win covers cost)
-    # If > 9, we can filter or just take top. 
-    # Logic: Prioritize numbers where digits are in BOTH lists (strongest), then others.
-    return list0_curr, final_prediction[:9]
-
-def backtest_prediction(raw_data, selected_giai, steps=2):
-    results = []
-    if len(raw_data) < steps + 2: return [] # Need T+1 and T+2 for bridge history
-
-    for i in range(steps):
-        # We want to predict for raw_data[i]
-        # Using data from raw_data[i+1] and raw_data[i+2]
-        
-        # 1. Simulate Prediction
-        l0_curr = get_list_missing(json.loads(raw_data[i+1]['detail']), selected_giai)
-        l0_prev = get_list_missing(json.loads(raw_data[i+2]['detail']), selected_giai)
-        
-        bridge_set = set()
-        for c in l0_curr:
-            for p in l0_prev:
-                bridge_set.add(c + p)
-                bridge_set.add(p + c)
-        
-        if not bridge_set:
-            fb = l0_curr if l0_curr else l0_prev
-            for d1 in fb:
-                for d2 in fb: bridge_set.add(d1+d2)
-        
-        pred_nums = sorted(list(bridge_set))[:9] # Same limit
-        
-        # 2. Check Result
-        target_detail = json.loads(raw_data[i]['detail'])
-        target_prizes = []
-        for f in target_detail: target_prizes += f.split(',')
-        
-        actual_los = set()
-        for lo in target_prizes:
-            if len(lo) >= 2 and lo[-2:].isdigit():
-                actual_los.add(lo[-2:])
-        
-        hits = [n for n in pred_nums if n in actual_los]
-        
-        results.append({
-            "issue": raw_data[i]['turnNum'],
-            "pred": pred_nums,
-            "hits": hits,
-            "count": len(hits)
-        })
-    return results
+        fb = l0_curr if l0_curr else l0_prev
+        for d1 in fb:
+            for d2 in fb: bridge_set.add(d1+d2)
+            
+    return l0_curr, sorted(list(bridge_set))[:9]
 
 # =============================================================================
 # STREAMLIT APP
@@ -448,33 +438,15 @@ with col4:
 # =============================================================================
 
 if st.session_state.raw_data:
-    # 1. Generate Prediction (Max 9 numbers)
-    p_missing, p_nums = generate_prediction(st.session_state.raw_data, st.session_state.selected_giai)
+    p_missing, p_nums = generate_prediction_header(st.session_state.raw_data, st.session_state.selected_giai)
     pred_str = " - ".join(p_nums) if p_nums else "Đang chờ dữ liệu..."
     missing_str = ", ".join(p_missing) if p_missing else "Không có"
     
-    # 2. Backtest 2 previous periods
-    bt_results = backtest_prediction(st.session_state.raw_data, st.session_state.selected_giai, steps=2)
-    
-    bt_html = ""
-    for item in bt_results:
-        hit_str = f"{item['count']} nháy ({', '.join(item['hits'])})" if item['count'] > 0 else "TRƯỢT"
-        color = "#2e7d32" if item['count'] > 0 else "#c62828" # Green or Red
-        bg_color = "#e8f5e9" if item['count'] > 0 else "#ffebee"
-        bt_html += f"""
-        <div style='background:{bg_color}; padding: 3px 8px; border-radius:4px; border:1px solid {color}'>
-            <strong>Kỳ {item['issue']}:</strong> <span style='color:{color}; font-weight:bold;'>{hit_str}</span>
-        </div>
-        """
-
     st.markdown(f"""
     <div class="prediction-box">
         <div class="pred-title">💎 DỰ ĐOÁN VIP (CẦU ĐỘNG 6-9 SỐ)</div>
         <div class="pred-nums">{pred_str}</div>
         <div class="pred-missing">⚠️ Thiếu kỳ này: {missing_str}</div>
-        <div class="backtest-text">
-            <div class="bt-row">{bt_html}</div>
-        </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -484,7 +456,7 @@ st.markdown("---")
 # TABS LOGIC
 # =============================================================================
 
-tab1, tab2, tab3 = st.tabs(["📊 CẦU LIST 0", "🎯 THIẾU ĐẦU", "🔮 LÔ LẠ"])
+tab1, tab2, tab3, tab4 = st.tabs(["📊 CẦU LIST 0", "🎯 THIẾU ĐẦU", "🔮 LÔ LẠ", "🔍 CẦU GỐC & THỪA (N-2, N-3)"])
 
 # -----------------------------------------------------------------------------
 # TAB 1: CẦU LIST 0
@@ -809,3 +781,78 @@ with tab3:
                 return styles
 
             st.dataframe(df_anal.style.apply(highlight_t3), height=700, use_container_width=True, hide_index=True, column_config=t3_config)
+
+# -----------------------------------------------------------------------------
+# TAB 4: CẦU GỐC & THỪA (N-2, N-3) - SUY NGƯỢC
+# -----------------------------------------------------------------------------
+with tab4:
+    st.markdown("##### 🔍 SUY NGƯỢC: CẦU GỐC & THỪA (So sánh N-2 và N-3)")
+    st.caption("Tìm chữ số GỐC (chung) và THỪA (riêng) của kỳ N-2 và N-3 để tạo dàn và so sánh với kỳ hiện tại.")
+
+    if not st.session_state.raw_data or len(st.session_state.raw_data) < 15:
+        st.info("Cần ít nhất 15 kỳ dữ liệu để phân tích.")
+    else:
+        # We need to loop through history and simulate predictions based on N-2 and N-3 relative to each row
+        # Current Row is 'i'. Prediction comes from 'i+2' and 'i+3'.
+        
+        rows_t4 = []
+        
+        for i in range(len(st.session_state.raw_data) - 4): # Ensure enough history
+            target_issue = st.session_state.raw_data[i]
+            issue_name = target_issue['turnNum']
+            
+            # Predictor Data: N-2 (index i+2) and N-3 (index i+3)
+            # Example: If predicting for 0422 (i=0), we use 0420 (i=2) and 0419 (i=3)
+            
+            goc, thua, dan_du_doan = generate_goc_thua_prediction(st.session_state.raw_data, st.session_state.selected_giai, offset_1=i+2, offset_2=i+3)
+            
+            # Get Result of Target Issue (i)
+            detail = json.loads(target_issue['detail'])
+            prizes_flat = []
+            for f in detail: prizes_flat += f.split(',')
+            
+            current_los = []
+            for lo in prizes_flat:
+                lo = lo.strip()
+                if len(lo) >= 2 and lo[-2:].isdigit(): current_los.append(lo[-2:])
+            
+            # Check hits
+            hits = sorted(list(set(dan_du_doan).intersection(set(current_los))))
+            hit_str = f"{len(hits)} nháy: {', '.join(hits)}" if hits else "-"
+            
+            rows_t4.append([
+                issue_name,
+                ",".join(sorted(list(goc))),
+                ",".join(sorted(list(thua))),
+                " ".join(dan_du_doan),
+                hit_str
+            ])
+            
+        df_t4 = pd.DataFrame(rows_t4, columns=["Kỳ (N)", "Gốc (Chung)", "Thừa (Riêng)", "Dàn Dự Đoán (từ N-2 & N-3)", "Kết Quả Nổ"])
+        
+        def highlight_t4(s):
+            styles = []
+            for v in s:
+                if s.name == "Kết Quả Nổ":
+                    if "nháy" in str(v):
+                        count = int(str(v).split()[0])
+                        if count >= 3: styles.append('background-color: #c8e6c9; color: #2e7d32; font-weight: bold') # Green
+                        else: styles.append('background-color: #fff9c4; color: #fbc02d; font-weight: bold') # Yellow
+                    else: styles.append('color: #e57373') # Red
+                elif s.name == "Gốc (Chung)": styles.append('background-color: #e3f2fd; color: #1565c0')
+                else: styles.append('')
+            return styles
+
+        st.dataframe(
+            df_t4.style.apply(highlight_t4),
+            height=700,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Kỳ (N)": st.column_config.TextColumn("Kỳ (N)", width=60),
+                "Gốc (Chung)": st.column_config.TextColumn("Gốc", width=60),
+                "Thừa (Riêng)": st.column_config.TextColumn("Thừa", width=70),
+                "Dàn Dự Đoán (từ N-2 & N-3)": st.column_config.TextColumn("Dàn Dự Đoán", width="medium"),
+                "Kết Quả Nổ": st.column_config.TextColumn("Kết Quả Nổ", width="medium"),
+            }
+        )
