@@ -199,18 +199,9 @@ def get_list_missing(detail, selected_giai):
     return [str(i) for i, v in enumerate([counter.get(str(d), 0) for d in range(10)]) if v == 0]
 
 def generate_goc_thua_advanced(raw_data, selected_giai, offset_base):
-    """
-    Thuật toán GỐC & THỪA NÂNG CAO:
-    - Gốc: Chung của N-2 và N-3 (offset_base + 1, offset_base + 2)
-    - Thừa: Tần suất 2-3 lần trong 4 kỳ (N-2, N-3, N-4, N-5)
-    
-    offset_base: 0 nếu đang dự đoán tương lai, 1 nếu backtest kỳ vừa rồi.
-    """
-    # Cần 5 kỳ dữ liệu (N-1 đến N-5 relative to prediction target)
-    # Tức là index offset_base + 1 đến offset_base + 4
     if len(raw_data) <= offset_base + 4: return [], [], []
     
-    # 1. Lấy List Thiếu của 4 kỳ
+    # Lấy List Thiếu của 4 kỳ
     l_n2 = get_list_missing(json.loads(raw_data[offset_base + 1]['detail']), selected_giai)
     l_n3 = get_list_missing(json.loads(raw_data[offset_base + 2]['detail']), selected_giai)
     l_n4 = get_list_missing(json.loads(raw_data[offset_base + 3]['detail']), selected_giai)
@@ -223,19 +214,15 @@ def generate_goc_thua_advanced(raw_data, selected_giai, offset_base):
     all_missing = l_n2 + l_n3 + l_n4 + l_n5
     counts = Counter(all_missing)
     thua = [k for k, v in counts.items() if 2 <= v <= 3]
-    
-    # Loại bỏ Gốc khỏi Thừa (để tránh trùng lặp khi ghép)
     thua = sorted([x for x in thua if x not in goc])
     
     # 4. Tạo Dàn
     dan = []
-    
-    # Gốc + Gốc (Kép) - Ưu tiên cao
+    # Gốc + Gốc (Kép)
     for g1 in goc:
         for g2 in goc:
             val = f"{g1}{g2}"
             if val not in dan: dan.append(val)
-            
     # Gốc + Thừa (và đảo)
     for g in goc:
         for t in thua:
@@ -243,26 +230,21 @@ def generate_goc_thua_advanced(raw_data, selected_giai, offset_base):
             v2 = f"{t}{g}"
             if v1 not in dan: dan.append(v1)
             if v2 not in dan: dan.append(v2)
-    
-    # Nếu Gốc rỗng, lấy Thừa ghép Thừa (Backup)
+    # Nếu Gốc rỗng, lấy Thừa ghép Thừa
     if not goc and len(dan) < 5:
         for t1 in thua:
             for t2 in thua:
                 val = f"{t1}{t2}"
                 if val not in dan: dan.append(val)
                 
-    final_dan = sorted(dan[:12]) # Lấy tối đa 12 số
-    
+    final_dan = sorted(dan[:12])
     return goc, thua, final_dan
 
 def backtest_advanced(raw_data, selected_giai, steps=2):
     results = []
-    # Cần đủ dữ liệu cho steps
-    # Mỗi step i cần dữ liệu đến i + 5
     if len(raw_data) < steps + 5: return []
 
     for i in range(steps):
-        # i=0: Test cho kỳ vừa xổ (index 0). Dữ liệu tính từ index 1 (N-2) đến 4 (N-5)
         goc, thua, dan = generate_goc_thua_advanced(raw_data, selected_giai, offset_base=i)
         
         target_detail = json.loads(raw_data[i]['detail'])
@@ -453,27 +435,13 @@ with col4:
 # =============================================================================
 
 if st.session_state.raw_data:
-    # 1. Predict for Upcoming (offset_base = -1 would mean future, but here we treat raw_data[0] as past, so upcoming uses index -1 relative logic.. wait.
-    # Logic: To predict Next Period, we look at raw_data[0] (N-1), raw_data[1] (N-2), ...
-    # So "Gốc" is intersection of N-2 (raw_data[0]) and N-3 (raw_data[1]) relative to FUTURE.
-    # No, wait. Standard practice:
-    # Upcoming is T.
-    # N-1 is raw_data[0]. N-2 is raw_data[1].
-    # User said: "lấy ký N-3 và n-2". Relative to what?
-    # If predicting for T, N-2 is raw_data[0], N-3 is raw_data[1].
-    # Let's assume prediction uses available data.
-    
-    # Correction:
-    # To predict for T (Unknown):
-    # N-2 is raw_data[0]. N-3 is raw_data[1]. N-4 is raw_data[2]. N-5 is raw_data[3].
-    
     goc, thua, pred_nums = generate_goc_thua_advanced(st.session_state.raw_data, st.session_state.selected_giai, offset_base=-1)
     
     pred_str = " - ".join(pred_nums) if pred_nums else "Đang chờ dữ liệu..."
     goc_str = ",".join(goc) if goc else "-"
     thua_str = ",".join(thua) if thua else "-"
     
-    # 2. Backtest 2 previous periods
+    # Backtest 2 previous periods
     bt_results = backtest_advanced(st.session_state.raw_data, st.session_state.selected_giai, steps=2)
     
     bt_html = ""
@@ -481,15 +449,12 @@ if st.session_state.raw_data:
         hit_str = f"Nổ {item['count']} ({', '.join(item['hits'])})" if item['count'] > 0 else "TRƯỢT"
         color = "#2e7d32" if item['count'] > 0 else "#c62828"
         bg_color = "#e8f5e9" if item['count'] > 0 else "#ffebee"
-        bt_html += f"""
-        <div class='bt-item' style='border-color:{color}; background:{bg_color}'>
-            <strong>Kỳ {item['issue']}:</strong> <span style='color:{color}; font-weight:bold;'>{hit_str}</span>
-        </div>
-        """
+        # Fixed single line HTML string
+        bt_html += f"<div class='bt-item' style='border-color:{color}; background:{bg_color}'><strong>Kỳ {item['issue']}:</strong> <span style='color:{color}; font-weight:bold;'>{hit_str}</span></div>"
 
     st.markdown(f"""
     <div class="prediction-box">
-        <div class="pred-title">💎 DỰ ĐOÁN GỐC & THỪA (Tần suất 2-3 lần)</div>
+        <div class="pred-title">💎 DỰ ĐOÁN GỐC & THỪA (TẦN SUẤT 2-3 LẦN)</div>
         <div class="pred-detail">Gốc (Chung N-2, N-3): <b>{goc_str}</b> | Thừa (Riêng 4 kỳ): <b>{thua_str}</b></div>
         <div class="pred-nums">{pred_str}</div>
         <div class="bt-row">{bt_html}</div>
