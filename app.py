@@ -663,3 +663,108 @@ with tab3:
                     "ĐB": st.column_config.TextColumn("ĐB", width=30),
                     "Lô Ra": st.column_config.TextColumn("Lô Ra", width="large")
                 }
+            )
+
+        with t3_right:
+            # Analysis Logic for Tab 3
+            max_prize_index = 9 if "Bắc" in region else 13
+            
+            processed = []
+            for item in st.session_state.raw_data:
+                detail = json.loads(item['detail'])
+                prizes_flat = []
+                for field in detail: prizes_flat += field.split(",")
+                
+                special_los = []
+                day_digit_counts = Counter()
+                
+                # Analyze prizes
+                for idx, prize in enumerate(prizes_flat):
+                    if idx > max_prize_index: break
+                    is_special, lo = detect_special_pattern(prize)
+                    if is_special and lo:
+                        prize_digits = set([d for d in prize.strip() if d.isdigit()])
+                        if prize_digits:
+                            special_los.append("".join(sorted(list(prize_digits))))
+                            for d in prize_digits: day_digit_counts[d] += 1
+                
+                list0 = sorted(list(set(special_los)))
+                
+                # Top Freq Logic
+                dan_nhi_hop = []
+                if day_digit_counts:
+                    unique_counts = sorted(list(set(day_digit_counts.values())), reverse=True)
+                    l1 = [d for d, c in day_digit_counts.items() if c == unique_counts[0]]
+                    l2 = []
+                    if len(unique_counts) > 1:
+                        l2 = [d for d, c in day_digit_counts.items() if c == unique_counts[1]]
+                    
+                    final_digits = l1 + l2 if len(l1)+len(l2) == 2 else l1
+                    if final_digits: dan_nhi_hop = generate_nhi_hop(sorted(final_digits))
+                
+                current_los = []
+                for lo in prizes_flat:
+                    lo = lo.strip()
+                    if len(lo) >= 2 and lo[-2:].isdigit(): current_los.append(lo[-2:])
+                
+                processed.append({"ky": item['turnNum'], "list0": list0, "dan": dan_nhi_hop, "res": current_los})
+
+            def diff(src, target): return sorted(list(set(src) - set(target)))
+
+            rows_anal = []
+            for i in range(len(processed)):
+                curr = processed[i]
+                row = [curr["ky"], ",".join(curr["list0"]), " ".join(curr["dan"])]
+                
+                # Check K1-K10
+                if curr["dan"]:
+                    current_dan = curr["dan"][:]
+                    for k in range(1, 11):
+                        target_idx = i - k
+                        if target_idx < 0:
+                            row.append("")
+                        else:
+                            res_target = processed[target_idx]["res"]
+                            current_dan = diff(current_dan, res_target)
+                            row.append(" ".join(current_dan) if current_dan else "-")
+                else:
+                    row.extend([""] * 10)
+                rows_anal.append(row)
+            
+            cols_anal = ["Kỳ", "Lô Lạ", "Dàn Nhị Hợp"] + [f"K{k}" for k in range(1, 11)]
+            df_anal = pd.DataFrame(rows_anal, columns=cols_anal)
+            
+            # Styling
+            t3_config = {
+                "Kỳ": st.column_config.TextColumn("Kỳ", width=30),
+                "Lô Lạ": st.column_config.TextColumn("Lô Lạ", width=50),
+                "Dàn Nhị Hợp": st.column_config.TextColumn("Dàn Nhị Hợp", width="medium"),
+            }
+            for k in range(1, 11):
+                t3_config[f"K{k}"] = st.column_config.TextColumn(f"K{k}", width=50)
+
+            k_colors = ["#F1F8E9", "#DCEDC8", "#C5E1A5", "#AED581", "#9CCC65", "#8BC34A", "#7CB342", "#689F38", "#558B2F", "#33691E"]
+
+            def highlight_t3(s):
+                styles = []
+                for v in s:
+                    if s.name == "Lô Lạ": styles.append('background-color: #ffebee; color: #c0392b')
+                    elif s.name == "Dàn Nhị Hợp": styles.append('background-color: #e3f2fd; color: #1565c0')
+                    elif s.name.startswith("K"):
+                        try:
+                            idx = int(s.name[1:]) - 1
+                            if v and v.strip() != "" and v.strip() != "-":
+                                styles.append(f'background-color: {k_colors[idx]}; color: black')
+                            else:
+                                styles.append('')
+                        except: styles.append('')
+                    else: styles.append('')
+                return styles
+
+            st.dataframe(
+                df_anal.style.apply(highlight_t3),
+                height=700,
+                use_container_width=True,
+                hide_index=True,
+                column_config=t3_config
+            )
