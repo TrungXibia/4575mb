@@ -370,52 +370,46 @@ with col4:
     components.html(clock_html, height=40)
 
 # =============================================================================
-# FREQUENCY STATISTICS BLOCK (N-4 to N-2)
+# FREQUENCY STATISTICS BLOCK (N-4 to N-2) - COMPACT VERSION
 # =============================================================================
 
 if st.session_state.raw_data and len(st.session_state.raw_data) >= 4:
-    # raw_data[0] là kết quả mới nhất (N-1)
-    # Cần lấy N-2, N-3, N-4 => Tương ứng index 1, 2, 3
+    # Lấy dữ liệu N-2, N-3, N-4
     target_indices = [1, 2, 3]
-    
     all_missing_digits = []
     
     for idx in target_indices:
         item = st.session_state.raw_data[idx]
         d = json.loads(item['detail'])
-        # Lấy List 0 (số thiếu trong các giải đã chọn)
+        # Lấy List 0
         missing_list = get_list_missing(d, st.session_state.selected_giai)
         all_missing_digits.extend(missing_list)
         
     # Đếm tần suất
     counts = Counter(all_missing_digits)
-    # Sắp xếp: Tần suất giảm dần, nếu bằng nhau thì số bé đứng trước
+    # Sắp xếp: Số xuất hiện nhiều nhất đứng trước. Nếu bằng nhau thì số nhỏ đứng trước.
     sorted_counts = sorted(counts.items(), key=lambda x: (-x[1], x[0]))
     
-    # Tạo HTML hiển thị
-    freq_html = ""
-    if sorted_counts:
-        for digit, count in sorted_counts:
-            freq_html += f"<div class='freq-item'>Số <b>{digit}</b> <span class='freq-count'>({count} lần)</span></div>"
-    else:
-        freq_html = "<div>Không tìm thấy số thiếu nào trong khoảng N-4 đến N-2.</div>"
+    # Chỉ lấy ra danh sách số (bỏ qua số lần count)
+    final_digits = [digit for digit, count in sorted_counts]
     
-    # Lấy thông tin kỳ để hiển thị (để user biết đang xem từ kỳ nào đến kỳ nào)
+    # Tạo chuỗi hiển thị
+    result_str = " - ".join(final_digits) if final_digits else "Không có dữ liệu"
+    
+    # Lấy thông tin kỳ
     last_issue = st.session_state.raw_data[1]['turnNum']
     first_issue = st.session_state.raw_data[3]['turnNum']
 
     st.markdown(f"""
     <div class="prediction-box">
-        <div class="pred-title">📊 TẦN SUẤT SỐ THIẾU TỪ KỲ {first_issue} ĐẾN {last_issue}</div>
-        <div style="font-size:12px; color:#555; margin-bottom:5px;">(Thống kê số lần xuất hiện trong List 0 của 3 kỳ quay trước đó: N-4, N-3, N-2)</div>
-        <div class="freq-row">{freq_html}</div>
+        <div class="pred-title">📊 TOP LIST 0 (TỪ {first_issue} ĐẾN {last_issue})</div>
+        <div class="pred-nums">{result_str}</div>
     </div>
     """, unsafe_allow_html=True)
 else:
     st.info("Đang chờ đủ dữ liệu để thống kê (cần ít nhất 4 kỳ)...")
 
 st.markdown("---")
-
 # =============================================================================
 # TABS LOGIC
 # =============================================================================
@@ -745,3 +739,4 @@ with tab3:
                 return styles
 
             st.dataframe(df_anal.style.apply(highlight_t3), height=700, use_container_width=True, hide_index=True, column_config=t3_config)
+
