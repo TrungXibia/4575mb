@@ -187,6 +187,26 @@ def get_target_results(prizes_flat, use_duoi_db, use_dau_db, use_duoi_g1, use_da
             if use_dau_g1: targets.add(g1[:2])
     return targets
 
+def detect_special_pattern(prize_str):
+    """Kiểm tra giải có <= 3 chữ số duy nhất"""
+    prize_str = prize_str.strip()
+    if not prize_str or not prize_str.isdigit():
+        return False, None
+    unique_digits = set(prize_str)
+    num_unique = len(unique_digits)
+    if num_unique <= 3:
+        return True, prize_str[-2:]
+    else:
+        return False, None
+
+def generate_nhi_hop(list_digits):
+    """Tạo dàn nhị hợp từ danh sách các chữ số"""
+    result_set = set()
+    for d1 in list_digits:
+        for d2 in list_digits:
+            result_set.add(f"{d1}{d2}")
+    return sorted(list(result_set))
+
 # =============================================================================
 # STREAMLIT APP
 # =============================================================================
@@ -280,8 +300,6 @@ with col4:
                 st.session_state.current_station = station
                 st.rerun()
 
-    # NOTE: The button is critical for the JavaScript to click. 
-    # Do NOT remove type="primary" or the logic below will break.
     if st.button("🔄 TẢI LẠI", type="primary", use_container_width=True):
         if station and station != "Không có lịch quay":
             with st.spinner(f"Đang tải {station}..."):
@@ -301,10 +319,6 @@ with col4:
         elif region == "Miền Nam": draw_time_config = "16:15"
         elif region == "Miền Trung": draw_time_config = "17:15"
 
-    # -----------------------------------------------------------------------------------------
-    # JAVASCRIPT AUTO RELOAD LOGIC:
-    # When diff <= 0, wait 4 seconds (buffer), then find the Primary Button and Click it.
-    # -----------------------------------------------------------------------------------------
     clock_html = f"""
     <style>
         body {{ margin: 0; padding: 0; font-family: "Source Sans Pro", sans-serif; font-size: 13px; background-color: transparent; color: #31333F; }}
@@ -385,7 +399,7 @@ st.markdown("---")
 # TABS LOGIC
 # =============================================================================
 
-tab1, tab2 = st.tabs(["📊 CẦU LIST 0 (TRUYỀN THỐNG)", "🎯 CẦU THIẾU ĐẦU & KIỂM TRA TRÚNG"])
+tab1, tab2, tab3 = st.tabs(["📊 CẦU LIST 0", "🎯 THIẾU ĐẦU", "🔮 LÔ LẠ"])
 
 # -----------------------------------------------------------------------------
 # TAB 1: CẦU LIST 0
@@ -435,8 +449,6 @@ with tab1:
                 rows_res.append(row)
             
             df_res = pd.DataFrame(rows_res, columns=headers)
-            
-            # CONFIG: Fixed width 30px for result columns
             column_config = {
                 "Kỳ": st.column_config.TextColumn("Kỳ", width=30),
                 "ĐB": st.column_config.TextColumn("ĐB", width=30),
@@ -492,7 +504,6 @@ with tab1:
             
             df_anal = pd.DataFrame(rows_anal, columns=["Kỳ", "Thiếu", "Sót K0", "Sót K1"] + [f"Sót K{k}" for k in range(2, 8)])
             
-            # CONFIG: Fixed width 60px for Sót columns
             anal_config = {
                 "Kỳ": st.column_config.TextColumn("Kỳ", width=30),
                 "Thiếu": st.column_config.TextColumn("Thiếu", width=50),
@@ -541,7 +552,6 @@ with tab2:
             
             df_simple = pd.DataFrame(rows_simple, columns=["Kỳ", "ĐB", "G1"])
             
-            # CONFIG: Fixed width 30px for result columns
             simple_config = {
                 "Kỳ": st.column_config.TextColumn("Kỳ", width=30),
                 "ĐB": st.column_config.TextColumn("ĐB", width=30),
@@ -588,11 +598,10 @@ with tab2:
             cols_t2 = ["Kỳ", "Thiếu Đầu", "Dàn K0", "K1", "K2", "K3", "K4", "K5", "K6", "K7"]
             df_t2 = pd.DataFrame(rows_t2, columns=cols_t2)
             
-            # CONFIG: Fixed width 60px for K1-K7 (Sót equivalent)
             t2_config = {
                 "Kỳ": st.column_config.TextColumn("Kỳ", width=30),
                 "Thiếu Đầu": st.column_config.TextColumn("Thiếu Đầu", width=40),
-                "Dàn K0": st.column_config.TextColumn("Dàn K0", width="medium"), # Dàn is long
+                "Dàn K0": st.column_config.TextColumn("Dàn K0", width="medium"),
             }
             for k in range(1, 8):
                 t2_config[f"K{k}"] = st.column_config.TextColumn(f"K{k}", width=60)
@@ -612,3 +621,45 @@ with tab2:
                 hide_index=True,
                 column_config=t2_config
             )
+
+# -----------------------------------------------------------------------------
+# TAB 3: LÔ LẠ & PATTERN
+# -----------------------------------------------------------------------------
+with tab3:
+    st.markdown("##### 🔮 PHÂN TÍCH LÔ LẠ (Pattern 1-2 số duy nhất)")
+    st.caption("Tìm các giải có ít chữ số (vd: 111, 121, 123) và tạo dàn nuôi 10 ngày.")
+
+    if not st.session_state.raw_data:
+        st.info("Chưa có dữ liệu.")
+    else:
+        t3_left, t3_right = st.columns([2, 6])
+
+        with t3_left:
+            # Result table showing all Lô Ra (2 digits)
+            rows_res = []
+            for item in st.session_state.raw_data:
+                d = json.loads(item['detail'])
+                prizes_flat = []
+                for f in d: prizes_flat += f.split(',')
+                db = prizes_flat[0] if len(prizes_flat) > 0 else ""
+                
+                # Get all 2-digit results
+                current_los = []
+                for lo in prizes_flat:
+                    lo = lo.strip()
+                    if len(lo) >= 2 and lo[-2:].isdigit():
+                        current_los.append(lo[-2:])
+                lo_ra = " ".join(sorted(set(current_los)))
+                rows_res.append([item['turnNum'], db, lo_ra])
+            
+            df_t3_res = pd.DataFrame(rows_res, columns=["Kỳ", "ĐB", "Lô Ra"])
+            st.dataframe(
+                df_t3_res,
+                height=700,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Kỳ": st.column_config.TextColumn("Kỳ", width=30),
+                    "ĐB": st.column_config.TextColumn("ĐB", width=30),
+                    "Lô Ra": st.column_config.TextColumn("Lô Ra", width="large")
+                }
