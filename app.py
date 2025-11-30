@@ -198,76 +198,6 @@ def get_list_missing(detail, selected_giai):
     counter = Counter(g_nums)
     return [str(i) for i, v in enumerate([counter.get(str(d), 0) for d in range(10)]) if v == 0]
 
-def generate_goc_thua_advanced(raw_data, selected_giai, offset_base):
-    if len(raw_data) <= offset_base + 4: return [], [], []
-    
-    # Lấy List Thiếu của 4 kỳ
-    l_n2 = get_list_missing(json.loads(raw_data[offset_base + 1]['detail']), selected_giai)
-    l_n3 = get_list_missing(json.loads(raw_data[offset_base + 2]['detail']), selected_giai)
-    l_n4 = get_list_missing(json.loads(raw_data[offset_base + 3]['detail']), selected_giai)
-    l_n5 = get_list_missing(json.loads(raw_data[offset_base + 4]['detail']), selected_giai)
-    
-    # 2. Tìm Gốc (Chung N-2 và N-3)
-    goc = sorted(list(set(l_n2).intersection(set(l_n3))))
-    
-    # 3. Tìm Thừa (Xuất hiện 2-3 lần trong 4 kỳ)
-    all_missing = l_n2 + l_n3 + l_n4 + l_n5
-    counts = Counter(all_missing)
-    thua = [k for k, v in counts.items() if 2 <= v <= 3]
-    thua = sorted([x for x in thua if x not in goc])
-    
-    # 4. Tạo Dàn
-    dan = []
-    # Gốc + Gốc (Kép)
-    for g1 in goc:
-        for g2 in goc:
-            val = f"{g1}{g2}"
-            if val not in dan: dan.append(val)
-    # Gốc + Thừa (và đảo)
-    for g in goc:
-        for t in thua:
-            v1 = f"{g}{t}"
-            v2 = f"{t}{g}"
-            if v1 not in dan: dan.append(v1)
-            if v2 not in dan: dan.append(v2)
-    # Nếu Gốc rỗng, lấy Thừa ghép Thừa
-    if not goc and len(dan) < 5:
-        for t1 in thua:
-            for t2 in thua:
-                val = f"{t1}{t2}"
-                if val not in dan: dan.append(val)
-                
-    final_dan = sorted(dan[:12])
-    return goc, thua, final_dan
-
-def backtest_advanced(raw_data, selected_giai, steps=2):
-    results = []
-    if len(raw_data) < steps + 5: return []
-
-    for i in range(steps):
-        goc, thua, dan = generate_goc_thua_advanced(raw_data, selected_giai, offset_base=i)
-        
-        target_detail = json.loads(raw_data[i]['detail'])
-        target_prizes = []
-        for f in target_detail: target_prizes += f.split(',')
-        
-        actual_los = set()
-        for lo in target_prizes:
-            if len(lo) >= 2 and lo[-2:].isdigit():
-                actual_los.add(lo[-2:])
-        
-        hits = [n for n in dan if n in actual_los]
-        
-        results.append({
-            "issue": raw_data[i]['turnNum'],
-            "goc": goc,
-            "thua": thua,
-            "pred": dan,
-            "hits": hits,
-            "count": len(hits)
-        })
-    return results
-
 # =============================================================================
 # STREAMLIT APP
 # =============================================================================
@@ -283,16 +213,25 @@ st.markdown("""
     h1, h2, h3, h4, h5 { margin-bottom: 0.2rem !important; padding-top: 0 !important; color: #ff4b4b !important; }
     button[data-baseweb="tab"] { font-size: 14px !important; font-weight: bold !important; }
     .prediction-box {
-        background-color: #e8f5e9;
-        border: 2px solid #2e7d32;
+        background-color: #e3f2fd;
+        border: 2px solid #1976d2;
         border-radius: 8px;
         padding: 8px;
         text-align: center;
         margin-bottom: 5px;
     }
-    .pred-title { color: #1b5e20; font-weight: bold; font-size: 15px; margin-bottom: 3px; text-transform: uppercase; }
-    .pred-nums { color: #d84315; font-weight: bold; font-size: 20px; letter-spacing: 2px; }
-    .pred-detail { color: #555; font-size: 12px; margin-bottom: 3px;}
+    .pred-title { color: #0d47a1; font-weight: bold; font-size: 15px; margin-bottom: 5px; text-transform: uppercase; }
+    .freq-row { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 5px; }
+    .freq-item { 
+        background: #fff; 
+        padding: 6px 12px; 
+        border-radius: 6px; 
+        border: 1px solid #bbdefb; 
+        font-size: 14px; 
+        color: #333;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+    .freq-count { color: #d32f2f; font-weight: bold; margin-left: 4px; }
     .bt-row { display: flex; justify-content: center; gap: 10px; margin-top: 5px; flex-wrap: wrap; }
     .bt-item { background: #fff; padding: 4px 8px; border-radius: 4px; border: 1px solid #ccc; font-size: 11px; }
 </style>
@@ -431,35 +370,49 @@ with col4:
     components.html(clock_html, height=40)
 
 # =============================================================================
-# PREDICTION BLOCK (ADVANCED GOC & THUA FREQUENCY)
+# FREQUENCY STATISTICS BLOCK (N-4 to N-2)
 # =============================================================================
 
-if st.session_state.raw_data:
-    goc, thua, pred_nums = generate_goc_thua_advanced(st.session_state.raw_data, st.session_state.selected_giai, offset_base=-1)
+if st.session_state.raw_data and len(st.session_state.raw_data) >= 4:
+    # raw_data[0] là kết quả mới nhất (N-1)
+    # Cần lấy N-2, N-3, N-4 => Tương ứng index 1, 2, 3
+    target_indices = [1, 2, 3]
     
-    pred_str = " - ".join(pred_nums) if pred_nums else "Đang chờ dữ liệu..."
-    goc_str = ",".join(goc) if goc else "-"
-    thua_str = ",".join(thua) if thua else "-"
+    all_missing_digits = []
     
-    # Backtest 2 previous periods
-    bt_results = backtest_advanced(st.session_state.raw_data, st.session_state.selected_giai, steps=2)
+    for idx in target_indices:
+        item = st.session_state.raw_data[idx]
+        d = json.loads(item['detail'])
+        # Lấy List 0 (số thiếu trong các giải đã chọn)
+        missing_list = get_list_missing(d, st.session_state.selected_giai)
+        all_missing_digits.extend(missing_list)
+        
+    # Đếm tần suất
+    counts = Counter(all_missing_digits)
+    # Sắp xếp: Tần suất giảm dần, nếu bằng nhau thì số bé đứng trước
+    sorted_counts = sorted(counts.items(), key=lambda x: (-x[1], x[0]))
     
-    bt_html = ""
-    for item in bt_results:
-        hit_str = f"Nổ {item['count']} ({', '.join(item['hits'])})" if item['count'] > 0 else "TRƯỢT"
-        color = "#2e7d32" if item['count'] > 0 else "#c62828"
-        bg_color = "#e8f5e9" if item['count'] > 0 else "#ffebee"
-        # Fixed single line HTML string
-        bt_html += f"<div class='bt-item' style='border-color:{color}; background:{bg_color}'><strong>Kỳ {item['issue']}:</strong> <span style='color:{color}; font-weight:bold;'>{hit_str}</span></div>"
+    # Tạo HTML hiển thị
+    freq_html = ""
+    if sorted_counts:
+        for digit, count in sorted_counts:
+            freq_html += f"<div class='freq-item'>Số <b>{digit}</b> <span class='freq-count'>({count} lần)</span></div>"
+    else:
+        freq_html = "<div>Không tìm thấy số thiếu nào trong khoảng N-4 đến N-2.</div>"
+    
+    # Lấy thông tin kỳ để hiển thị (để user biết đang xem từ kỳ nào đến kỳ nào)
+    last_issue = st.session_state.raw_data[1]['turnNum']
+    first_issue = st.session_state.raw_data[3]['turnNum']
 
     st.markdown(f"""
     <div class="prediction-box">
-        <div class="pred-title">💎 DỰ ĐOÁN GỐC & THỪA (TẦN SUẤT 2-3 LẦN)</div>
-        <div class="pred-detail">Gốc (Chung N-2, N-3): <b>{goc_str}</b> | Thừa (Riêng 4 kỳ): <b>{thua_str}</b></div>
-        <div class="pred-nums">{pred_str}</div>
-        <div class="bt-row">{bt_html}</div>
+        <div class="pred-title">📊 TẦN SUẤT SỐ THIẾU TỪ KỲ {first_issue} ĐẾN {last_issue}</div>
+        <div style="font-size:12px; color:#555; margin-bottom:5px;">(Thống kê số lần xuất hiện trong List 0 của 3 kỳ quay trước đó: N-4, N-3, N-2)</div>
+        <div class="freq-row">{freq_html}</div>
     </div>
     """, unsafe_allow_html=True)
+else:
+    st.info("Đang chờ đủ dữ liệu để thống kê (cần ít nhất 4 kỳ)...")
 
 st.markdown("---")
 
