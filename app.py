@@ -290,7 +290,6 @@ with col3:
     else: station = st.selectbox("Đài", ["Không có lịch quay"], disabled=True, label_visibility="collapsed")
 
 with col4:
-    # Auto load logic: Check if station changed
     if station and station != "Không có lịch quay":
         if station != st.session_state.get('current_station'):
             with st.spinner(f"Đang tải {station}..."):
@@ -486,20 +485,40 @@ with tab1:
                 curr = processed[i]
                 row = [curr["ky"], ",".join(curr["list0"])]
                 
-                # K0
-                if i+1 < len(processed):
-                    k0 = diff(bridge_ab(processed[i+1]["list0"], curr["list0"]), curr["res"])
-                    row.append(" ".join(k0))
-                else: row.append("")
+                # --- [FIXED] LOGIC SÓT K0 ---
+                # Sót K0: Dàn (từ i+1 & i) so với Kết quả i (Hiện tại)
+                if i + 1 < len(processed):
+                    l0_curr = processed[i]["list0"]
+                    l0_next = processed[i+1]["list0"]
+                    dan_k0 = bridge_ab(l0_next, l0_curr)
+                    sot_k0 = diff(dan_k0, curr["res"])
+                    row.append(" ".join(sot_k0))
+                else:
+                    row.append("")
+                    sot_k0 = [] # No data for bridge
                 
-                # K1-K7
-                if i>0 and i+1 < len(processed):
-                    dan = bridge_ab(processed[i+1]["list0"], processed[i]["list0"])
-                    for k in range(7):
-                        t_idx = i - k
-                        if t_idx < 0: row.append("")
-                        else: row.append(" ".join(diff(dan, processed[t_idx]["res"])))
-                else: row.extend([""]*7)
+                # --- [FIXED] LOGIC SÓT K1-K7 (Cumulative) ---
+                # K1: Dàn gốc so với kết quả ngày i-1
+                # K2: Dàn còn lại của K1 so với kết quả ngày i-2
+                if i > 0 and i + 1 < len(processed):
+                    # Khởi tạo dàn còn lại là Sót K0
+                    current_remains = sot_k0
+                    
+                    for k in range(1, 8): # Chạy từ 1 đến 7 (K1 -> K7)
+                        target_idx = i - k # Index của ngày tương lai (trên bảng)
+                        
+                        if target_idx < 0:
+                            # Chưa có kết quả cho ngày này
+                            row.append("")
+                        else:
+                            # Lấy kết quả của ngày target
+                            res_target = processed[target_idx]["res"]
+                            # Loại bỏ số trúng khỏi dàn còn lại
+                            current_remains = diff(current_remains, res_target)
+                            row.append(" ".join(current_remains))
+                else:
+                    row.extend([""] * 7)
+                
                 rows_anal.append(row)
             
             df_anal = pd.DataFrame(rows_anal, columns=["Kỳ", "Thiếu", "Sót K0", "Sót K1"] + [f"Sót K{k}" for k in range(2, 8)])
