@@ -18,7 +18,6 @@ HEADERS = {
     "Referer": "https://www.kqxs88.live/",
 }
 
-# Danh sách API (Đã kiểm tra liền mạch, không ngắt dòng)
 DAI_API = {
     "Miền Bắc": "https://www.kqxs88.live/api/front/open/lottery/history/list/game?limitNum=60&gameCode=miba",
     "Miền Bắc 75s": "https://www.kqxs88.live/api/front/open/lottery/history/list/game?limitNum=60&gameCode=vnmbmg",
@@ -190,7 +189,6 @@ def generate_nhi_hop(list_digits):
     return sorted(list(result_set))
 
 def get_list_missing(detail, selected_giai):
-    """Tính List Thiếu (Đầu Câm) của 1 kỳ"""
     prizes_flat = []
     for f in detail: prizes_flat += f.split(',')
     g_nums = []
@@ -203,39 +201,49 @@ def get_list_missing(detail, selected_giai):
 def generate_goc_thua_from_missing(raw_data, selected_giai, offset_1, offset_2):
     """
     Thuật toán: Lấy List Thiếu kỳ N-offset_1 và N-offset_2.
-    Tìm: Gốc (Chung), Thừa (Riêng) CỦA CÁC ĐẦU SỐ THIẾU.
-    Ghép: Gốc-Thừa + Thừa-Gốc + Gốc-Gốc.
     """
     if len(raw_data) <= max(offset_1, offset_2): return [], [], []
     
-    # Lấy LIST THIẾU của 2 kỳ quá khứ
+    # 1. Lấy dữ liệu nguồn
     detail_A = json.loads(raw_data[offset_1]['detail'])
     list0_A = set(get_list_missing(detail_A, selected_giai))
     
     detail_B = json.loads(raw_data[offset_2]['detail'])
     list0_B = set(get_list_missing(detail_B, selected_giai))
     
+    # 2. Phân loại Gốc & Thừa
     goc = sorted(list(list0_A.intersection(list0_B)))
     thua = sorted(list(list0_A.symmetric_difference(list0_B)))
     
-    dan = set()
-    # Ghép từ các ĐẦU SỐ THIẾU
-    for g in goc:
-        for t in thua:
-            dan.add(f"{g}{t}")
-            dan.add(f"{t}{g}")
+    # 3. Tạo dàn (Ưu tiên thứ tự để cắt lấy 12 số VIP)
+    dan = [] 
+    
+    # Ưu tiên 1: Gốc ghép Gốc (Kép) - Xác suất nổ cao nhất
     for g1 in goc:
         for g2 in goc:
-            dan.add(f"{g1}{g2}")
+            val = f"{g1}{g2}"
+            if val not in dan: dan.append(val)
             
-    # Nếu danh sách Gốc và Thừa quá ít (dàn trống), lấy ghép chéo toàn bộ A và B
-    if not dan:
-        all_digits = sorted(list(list0_A.union(list0_B)))
-        for d1 in all_digits:
-            for d2 in all_digits:
-                dan.add(f"{d1}{d2}")
+    # Ưu tiên 2: Gốc ghép Thừa (Và đảo)
+    for g in goc:
+        for t in thua:
+            v1 = f"{g}{t}"
+            v2 = f"{t}{g}"
+            if v1 not in dan: dan.append(v1)
+            if v2 not in dan: dan.append(v2)
+    
+    # Ưu tiên 3: Nếu dàn vẫn ít (<10 số), lấy Thừa ghép Thừa
+    if len(dan) < 10:
+        for t1 in thua:
+            for t2 in thua:
+                if t1 != t2: # Ít khi kép thừa nổ
+                    val = f"{t1}{t2}"
+                    if val not in dan: dan.append(val)
+    
+    # Cắt lấy 12 số đầu tiên (VIP nhất) và sort lại cho đẹp
+    final_dan = sorted(dan[:12])
 
-    return goc, thua, sorted(list(dan))
+    return goc, thua, final_dan
 
 def backtest_goc_thua_missing(raw_data, selected_giai, steps=2):
     results = []
@@ -246,7 +254,6 @@ def backtest_goc_thua_missing(raw_data, selected_giai, steps=2):
         # Dùng List Thiếu của kỳ i+2 (N-2) và i+3 (N-3)
         goc, thua, dan = generate_goc_thua_from_missing(raw_data, selected_giai, offset_1=i+2, offset_2=i+3)
         
-        # Lấy kết quả thực tế
         target_detail = json.loads(raw_data[i]['detail'])
         target_prizes = []
         for f in target_detail: target_prizes += f.split(',')
@@ -293,8 +300,8 @@ st.markdown("""
     .pred-title { color: #1b5e20; font-weight: bold; font-size: 15px; margin-bottom: 3px; text-transform: uppercase; }
     .pred-nums { color: #d84315; font-weight: bold; font-size: 18px; letter-spacing: 1px; }
     .pred-detail { color: #555; font-size: 12px; margin-bottom: 3px;}
-    .bt-row { display: flex; justify-content: center; gap: 10px; margin-top: 5px; font-size: 11px;}
-    .bt-item { background: #fff; padding: 2px 6px; border-radius: 4px; border: 1px solid #ccc; }
+    .bt-row { display: flex; justify-content: center; gap: 10px; margin-top: 5px; flex-wrap: wrap; }
+    .bt-item { background: #fff; padding: 4px 8px; border-radius: 4px; border: 1px solid #ccc; font-size: 11px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -450,15 +457,12 @@ if st.session_state.raw_data:
         hit_str = f"Nổ {item['count']} ({', '.join(item['hits'])})" if item['count'] > 0 else "TRƯỢT"
         color = "#2e7d32" if item['count'] > 0 else "#c62828"
         bg_color = "#e8f5e9" if item['count'] > 0 else "#ffebee"
-        bt_html += f"""
-        <div class='bt-item' style='border-color:{color}; background:{bg_color}'>
-            <strong>Kỳ {item['issue']}:</strong> <span style='color:{color}; font-weight:bold;'>{hit_str}</span>
-        </div>
-        """
+        # Fix: Remove newlines from HTML string to prevent Markdown block rendering issues
+        bt_html += f"<div class='bt-item' style='border-color:{color}; background:{bg_color}'><strong>Kỳ {item['issue']}:</strong> <span style='color:{color}; font-weight:bold;'>{hit_str}</span></div>"
 
     st.markdown(f"""
     <div class="prediction-box">
-        <div class="pred-title">💎 DỰ ĐOÁN TỪ LIST THIẾU (N-2 vs N-3)</div>
+        <div class="pred-title">💎 DỰ ĐOÁN VIP (GỐC & THỪA N-2, N-3)</div>
         <div class="pred-detail">Gốc (Chung): <b>{goc_str}</b> | Thừa (Riêng): <b>{thua_str}</b></div>
         <div class="pred-nums">{pred_str}</div>
         <div class="bt-row">{bt_html}</div>
