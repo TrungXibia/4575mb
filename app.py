@@ -690,17 +690,23 @@ with tab3:
                 
                 list0 = sorted(list(set(special_los)))
                 
-                # Top Freq Logic
                 dan_nhi_hop = []
-                if day_digit_counts:
-                    unique_counts = sorted(list(set(day_digit_counts.values())), reverse=True)
-                    l1 = [d for d, c in day_digit_counts.items() if c == unique_counts[0]]
-                    l2 = []
-                    if len(unique_counts) > 1:
-                        l2 = [d for d, c in day_digit_counts.items() if c == unique_counts[1]]
-                    
-                    final_digits = l1 + l2 if len(l1)+len(l2) == 2 else l1
-                    if final_digits: dan_nhi_hop = generate_nhi_hop(sorted(final_digits))
+                digits_union = sorted(list(set("".join(list0)))) if list0 else []
+                ranked_all = sorted(day_digit_counts.items(), key=lambda kv: kv[1], reverse=True)
+                final_digits = []
+                if digits_union:
+                    ranked = sorted(digits_union, key=lambda d: day_digit_counts.get(d, 0), reverse=True)
+                    final_digits = ranked[:3]
+                else:
+                    final_digits = [d for d, _ in ranked_all[:3]]
+                if len(final_digits) < 3:
+                    for d, _ in ranked_all:
+                        if d not in final_digits:
+                            final_digits.append(d)
+                        if len(final_digits) == 3:
+                            break
+                if len(final_digits) == 3:
+                    dan_nhi_hop = generate_nhi_hop(sorted(final_digits))
                 
                 current_los = []
                 for lo in prizes_flat:
