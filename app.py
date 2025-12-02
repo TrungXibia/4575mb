@@ -931,82 +931,132 @@ with tab4:
         if len(st.session_state.raw_data) < 5:
             st.warning("Cần ít nhất 5 kỳ dữ liệu.")
         else:
-            col1, col2 = st.columns([1, 3])
-            with col1:
-                max_distance = st.number_input("Khoảng cách vị trí tối đa", min_value=1, max_value=10, value=2)
-                num_digits = st.number_input("Số chữ số dự đoán", min_value=1, max_value=10, value=5)
+            # Split layout: Left (Analysis) - Right (Results & Stats)
+            t4_col_left, t4_col_right = st.columns([1.5, 1])
+            
+            # --- LEFT COLUMN: PREDICTION ---
+            with t4_col_left:
+                c1, c2 = st.columns(2)
+                with c1: max_distance = st.number_input("Khoảng cách vị trí tối đa", min_value=1, max_value=10, value=2)
+                with c2: num_digits = st.number_input("Số chữ số dự đoán", min_value=1, max_value=10, value=5)
                 
-            if st.button("🔍 Phân Tích Lô Nháy", type="primary"):
-                with st.spinner("Đang phân tích..."):
-                    data = st.session_state.raw_data
+                if st.button("🔄 Phân Tích Lại"):
+                    st.rerun()
+
+                # AUTO ANALYSIS (No button required)
+                data = st.session_state.raw_data
+                
+                # 1. Analyze Top Head/Tail
+                dau_freq = Counter()
+                duoi_freq = Counter()
+                for item in data[:3]:
+                    nums = get_all_numbers(item)
+                    for n in nums:
+                        if len(n) >= 2:
+                            dau_freq[n[-2]] += 1
+                            duoi_freq[n[-1]] += 1
+                top_dau = [d for d, c in dau_freq.most_common(5)]
+                top_duoi = [d for d, c in duoi_freq.most_common(5)]
+                
+                # 2. Analyze Pattern (Lô Nháy)
+                latest_item = data[0]
+                prev_item = data[1]
+                
+                latest_g3 = get_prize3_numbers(latest_item)
+                prev_g3 = get_prize3_numbers(prev_item)
+                
+                # Get pairs from latest result
+                latest_nums = get_all_numbers(latest_item)
+                pairs = set()
+                for n in latest_nums:
+                    if len(n) >= 2: 
+                        pairs.add(n[-2:])
+                
+                pair_scores = {}
+                for pair in pairs:
+                    if len(pair) >= 2:
+                        d1, d2 = pair[0], pair[1]
+                        valid_positions = find_digit_positions_in_g3(prev_g3, d1, d2, max_distance)
+                        for pattern in valid_positions:
+                            preds = apply_pattern_to_current(latest_g3, pattern)
+                            for p in preds:
+                                score = max_distance - pattern['distance'] + 1
+                                pd1, pd2 = p['digit1'], p['digit2']
+                                key = tuple(sorted((pd1, pd2)))
+                                pair_scores[key] = pair_scores.get(key, 0) + score
+                
+                if pair_scores:
+                    digit_scores = {}
+                    for (d1, d2), score in pair_scores.items():
+                        digit_scores[d1] = digit_scores.get(d1, 0) + score
+                        digit_scores[d2] = digit_scores.get(d2, 0) + score
                     
-                    # 1. Analyze Top Head/Tail
-                    dau_freq = Counter()
-                    duoi_freq = Counter()
-                    for item in data[:3]:
-                        nums = get_all_numbers(item)
-                        for n in nums:
-                            if len(n) >= 2:
-                                dau_freq[n[-2]] += 1
-                                duoi_freq[n[-1]] += 1
-                    top_dau = [d for d, c in dau_freq.most_common(5)]
-                    top_duoi = [d for d, c in duoi_freq.most_common(5)]
+                    top_digits = [d for d, s in sorted(digit_scores.items(), key=lambda x: -x[1])[:num_digits]]
+                    top_digits = sorted(top_digits)
                     
-                    # 2. Analyze Pattern (Lô Nháy)
-                    latest_item = data[0]
-                    prev_item = data[1]
+                    st.success(f"**Chữ số dự đoán:** {' - '.join(top_digits)}")
                     
-                    latest_g3 = get_prize3_numbers(latest_item)
-                    prev_g3 = get_prize3_numbers(prev_item)
+                    # Detailed Prediction Info
+                    st.markdown("###### CHI TIẾT DỰ ĐOÁN")
+                    st.info(f"**Top Đầu (3 kỳ):** {' - '.join(top_dau)}")
+                    st.info(f"**Top Đuôi (3 kỳ):** {' - '.join(top_duoi)}")
                     
-                    # Get pairs from latest result (simplified: all pairs)
-                    latest_nums = get_all_numbers(latest_item)
-                    pairs = set()
-                    for n in latest_nums:
-                        if len(n) >= 2: 
-                            pairs.add(n[-2:])
+                    match_head = [d for d in top_digits if d in top_dau]
+                    match_tail = [d for d in top_digits if d in top_duoi]
                     
-                    pair_scores = {}
-                    for pair in pairs:
-                        if len(pair) >= 2:
-                            d1, d2 = pair[0], pair[1]
-                            # Find in prev G3
-                            valid_positions = find_digit_positions_in_g3(prev_g3, d1, d2, max_distance)
-                            for pattern in valid_positions:
-                                preds = apply_pattern_to_current(latest_g3, pattern)
-                                for p in preds:
-                                    score = max_distance - pattern['distance'] + 1
-                                    pd1, pd2 = p['digit1'], p['digit2']
-                                    key = tuple(sorted((pd1, pd2)))
-                                    pair_scores[key] = pair_scores.get(key, 0) + score
+                    mc1, mc2 = st.columns(2)
+                    with mc1:
+                        if match_head: st.write(f"✅ **Trùng Đầu:** {', '.join(match_head)}")
+                        else: st.write("❌ **Trùng Đầu:** Không")
+                    with mc2:
+                        if match_tail: st.write(f"✅ **Trùng Đuôi:** {', '.join(match_tail)}")
+                        else: st.write("❌ **Trùng Đuôi:** Không")
+                else:
+                    st.warning("Không tìm thấy mẫu phù hợp trong kỳ này.")
+
+            # --- RIGHT COLUMN: RESULTS & STATS ---
+            with t4_col_right:
+                st.markdown("##### 📋 KẾT QUẢ & THỐNG KÊ")
+                
+                def format_prizes(item):
+                    d = json.loads(item['detail'])
+                    prizes_flat = []
+                    for f in d: prizes_flat += f.split(',')
                     
-                    if pair_scores:
-                        # Calculate digit scores
-                        digit_scores = {}
-                        for (d1, d2), score in pair_scores.items():
-                            digit_scores[d1] = digit_scores.get(d1, 0) + score
-                            digit_scores[d2] = digit_scores.get(d2, 0) + score
-                        
-                        top_digits = [d for d, s in sorted(digit_scores.items(), key=lambda x: -x[1])[:num_digits]]
-                        top_digits = sorted(top_digits)
-                        
-                        # Display Results
-                        st.success(f"**Chữ số dự đoán:** {' - '.join(top_digits)}")
-                        
-                        c1, c2 = st.columns(2)
-                        with c1:
-                            st.info(f"**Top Đầu:** {' - '.join(top_dau)}")
-                            match_head = [d for d in top_digits if d in top_dau]
-                            if match_head:
-                                st.write(f"✅ **Trùng Đầu:** {', '.join(match_head)}")
-                            else:
-                                st.write("❌ **Trùng Đầu:** Không")
-                        with c2:
-                            st.info(f"**Top Đuôi:** {' - '.join(top_duoi)}")
-                            match_tail = [d for d in top_digits if d in top_duoi]
-                            if match_tail:
-                                st.write(f"✅ **Trùng Đuôi:** {', '.join(match_tail)}")
-                            else:
-                                st.write("❌ **Trùng Đuôi:** Không")
-                    else:
-                        st.warning("Không tìm thấy mẫu phù hợp trong kỳ này.")
+                    # Mapping for MB
+                    labels = ["ĐB", "G1", "G2", "G3", "G4", "G5", "G6", "G7"]
+                    # Indices for MB: ĐB(0), G1(1), G2(2-3), G3(4-9), G4(10-13), G5(14-19), G6(20-22), G7(23-26)
+                    ranges = [(0,1), (1,2), (2,4), (4,10), (10,14), (14,20), (20,23), (23,27)]
+                    
+                    html = f"<div style='font-size:12px; border:1px solid #ddd; padding:5px; border-radius:5px; margin-bottom:5px;'>"
+                    html += f"<div style='color:#d32f2f; font-weight:bold; border-bottom:1px solid #eee; margin-bottom:3px;'>📅 {item.get('openTime','')}</div>"
+                    
+                    for label, (start, end) in zip(labels, ranges):
+                        if start < len(prizes_flat):
+                            vals = prizes_flat[start:end]
+                            vals_str = " - ".join([v.strip() for v in vals if v.strip()])
+                            html += f"<div style='display:flex; justify-content:space-between;'><span><b>{label}:</b></span> <span style='color:#333'>{vals_str}</span></div>"
+                    html += "</div>"
+                    return html
+
+                # Latest Result
+                if len(data) > 0:
+                    st.markdown("**KỲ MỚI NHẤT:**")
+                    st.markdown(format_prizes(data[0]), unsafe_allow_html=True)
+                
+                # Previous Result
+                if len(data) > 1:
+                    st.markdown("**KỲ TRƯỚC ĐÓ:**")
+                    st.markdown(format_prizes(data[1]), unsafe_allow_html=True)
+                
+                # Stats Table (Head/Tail)
+                st.markdown("**THỐNG KÊ ĐẦU/ĐUÔI (3 kỳ):**")
+                stats_rows = []
+                for d in range(10):
+                    d_str = str(d)
+                    stats_rows.append({
+                        "Số": d_str,
+                        "Đầu": dau_freq.get(d_str, 0),
+                        "Đuôi": duoi_freq.get(d_str, 0)
+                    })
+                st.dataframe(pd.DataFrame(stats_rows).set_index("Số").T, use_container_width=True)
