@@ -889,41 +889,44 @@ with tab4:
         # Multi-station mode
         st.markdown(f"##### 📊 KẾT QUẢ TỔNG HỢP CÁC ĐÀI ({selected_day})")
         
-        if st.button("🔍 Phân Tích Tất Cả Đài", type="primary"):
-            with st.spinner(f"Đang tải dữ liệu {len(stations)} đài..."):
-                # Parallel Fetching
-                multi_data = {}
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future_to_station = {executor.submit(lambda s: (s, load_data(s)), s): s for s in stations}
-                    for future in concurrent.futures.as_completed(future_to_station):
-                        station_name = future_to_station[future]
-                        try:
-                            result_station, (data, _) = future.result()
-                            if data: 
-                                multi_data[result_station] = data
-                        except Exception as e:
-                            st.error(f"Lỗi tải {station_name}: {e}")
-                
-                # Calculate Predictions
-                results = []
-                for stn in stations:
-                    if stn in multi_data:
-                        pred = calculate_tab4_predictions(multi_data[stn])
-                        results.append({
-                            "Đài": stn,
-                            "Chữ số dự đoán": pred['digits'],
-                            "Top Đầu": pred['top_dau'],
-                            "Top Đuôi": pred['top_duoi'],
-                            "Trùng Đầu": pred['match_head'],
-                            "Trùng Đuôi": pred['match_tail']
-                        })
-                    else:
-                        results.append({"Đài": stn, "Chữ số dự đoán": "Lỗi/Không có DL"})
-                
-                # Display Transposed DataFrame (Stations as Columns)
-                if results:
-                    df = pd.DataFrame(results).set_index("Đài").T
-                    st.dataframe(df, use_container_width=True)
+        if st.button("🔄 Phân Tích Lại"):
+            st.rerun()
+
+        # AUTO ANALYSIS (No button required)
+        with st.spinner(f"Đang tải dữ liệu {len(stations)} đài..."):
+            # Parallel Fetching
+            multi_data = {}
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future_to_station = {executor.submit(lambda s: (s, load_data(s)), s): s for s in stations}
+                for future in concurrent.futures.as_completed(future_to_station):
+                    station_name = future_to_station[future]
+                    try:
+                        result_station, (data, _) = future.result()
+                        if data: 
+                            multi_data[result_station] = data
+                    except Exception as e:
+                        st.error(f"Lỗi tải {station_name}: {e}")
+            
+            # Calculate Predictions
+            results = []
+            for stn in stations:
+                if stn in multi_data:
+                    pred = calculate_tab4_predictions(multi_data[stn])
+                    results.append({
+                        "Đài": stn,
+                        "Chữ số dự đoán": pred['digits'],
+                        "Top Đầu": pred['top_dau'],
+                        "Top Đuôi": pred['top_duoi'],
+                        "Trùng Đầu": pred['match_head'],
+                        "Trùng Đuôi": pred['match_tail']
+                    })
+                else:
+                    results.append({"Đài": stn, "Chữ số dự đoán": "Lỗi/Không có DL"})
+            
+            # Display Transposed DataFrame (Stations as Columns)
+            if results:
+                df = pd.DataFrame(results).set_index("Đài").T
+                st.dataframe(df, use_container_width=True)
     else:
         # Single station mode (Miền Bắc)
         st.markdown("##### 🎲 DỰ ĐOÁN LÔ NHÁY & CẶP (Miền Bắc)")
