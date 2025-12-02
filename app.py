@@ -138,14 +138,14 @@ def http_get_issue_list(url: str, timeout: int = 10):
 def get_current_day_vietnamese():
     return DAYS_OF_WEEK[datetime.now().weekday()]
 
-def load_data(station_name):
+def load_data(station_name, timeout=10):
     api_key = station_name
     if "Miền Bắc" in station_name and "45s" not in station_name and "75s" not in station_name:
         api_key = "Miền Bắc"
     
     url = DAI_API.get(api_key)
     if url:
-        return http_get_issue_list(url)
+        return http_get_issue_list(url, timeout=timeout)
     return [], ""
 
 # =============================================================================
@@ -894,22 +894,16 @@ with tab4:
 
         # AUTO ANALYSIS (No button required)
         with st.spinner(f"Đang tải dữ liệu {len(stations)} đài..."):
-            # Parallel Fetching
+            # Sequential Fetching (More stable for Streamlit)
             multi_data = {}
-            # Limit max_workers to prevent overwhelming the network
-            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-                future_to_station = {executor.submit(lambda s: (s, load_data(s)), s): s for s in stations}
-                for future in concurrent.futures.as_completed(future_to_station):
-                    station_name = future_to_station[future]
-                    try:
-                        # Add timeout to prevent indefinite hanging
-                        result_station, (data, _) = future.result(timeout=15)
-                        if data: 
-                            multi_data[result_station] = data
-                    except concurrent.futures.TimeoutError:
-                        st.error(f"Lỗi tải {station_name}: Quá thời gian chờ (Timeout)")
-                    except Exception as e:
-                        st.error(f"Lỗi tải {station_name}: {e}")
+            for stn in stations:
+                try:
+                    # Use shorter timeout (5s)
+                    data, _ = load_data(stn, timeout=5)
+                    if data:
+                        multi_data[stn] = data
+                except Exception as e:
+                    st.error(f"Lỗi tải {stn}: {e}")
             
             # Calculate Predictions
             results = []
