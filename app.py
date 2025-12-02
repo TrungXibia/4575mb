@@ -896,14 +896,18 @@ with tab4:
         with st.spinner(f"Đang tải dữ liệu {len(stations)} đài..."):
             # Parallel Fetching
             multi_data = {}
-            with concurrent.futures.ThreadPoolExecutor() as executor:
+            # Limit max_workers to prevent overwhelming the network
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                 future_to_station = {executor.submit(lambda s: (s, load_data(s)), s): s for s in stations}
                 for future in concurrent.futures.as_completed(future_to_station):
                     station_name = future_to_station[future]
                     try:
-                        result_station, (data, _) = future.result()
+                        # Add timeout to prevent indefinite hanging
+                        result_station, (data, _) = future.result(timeout=15)
                         if data: 
                             multi_data[result_station] = data
+                    except concurrent.futures.TimeoutError:
+                        st.error(f"Lỗi tải {station_name}: Quá thời gian chờ (Timeout)")
                     except Exception as e:
                         st.error(f"Lỗi tải {station_name}: {e}")
             
