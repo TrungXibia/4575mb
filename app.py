@@ -8,6 +8,7 @@ import pandas as pd
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from datetime import datetime
+import concurrent.futures
 
 # =============================================================================
 # CẤU HÌNH & DỮ LIỆU
@@ -148,18 +149,18 @@ def http_get_issue_list(url: str, timeout: int = 10):
 def get_current_day_vietnamese():
     return DAYS_OF_WEEK[datetime.now().weekday()]
 
-def load_data(station_name):
+def load_data(station_name, timeout=10):
     api_key = station_name
     if "Miền Bắc" in station_name and "45s" not in station_name and "75s" not in station_name:
         api_key = "Miền Bắc"
     
     url = DAI_API.get(api_key)
     if url:
-        return http_get_issue_list(url)
+        return http_get_issue_list(url, timeout=timeout)
     return [], ""
 
 # =============================================================================
-# LOGIC HELPER FUNCTIONS
+# LOGIC HELPER FUNCTIONS (FOR TAB 1-3)
 # =============================================================================
 
 def generate_cham_tong(list_missing):
@@ -217,6 +218,108 @@ def generate_nhi_hop(list_digits):
         for d2 in list_digits:
             result_set.add(f"{d1}{d2}")
     return sorted(list(result_set))
+
+# =============================================================================
+# TAB 4 HELPER FUNCTIONS (NEWLY ADDED)
+# =============================================================================
+
+def get_all_numbers(item):
+    """Lấy tất cả số từ một kỳ quay"""
+    detail = json.loads(item['detail'])
+    nums = []
+    for field in detail:
+        nums.extend([n.strip() for n in field.split(',') if n.strip()])
+    return nums
+
+def get_prize3_numbers(item):
+    """Lấy các số giải 3"""
+    detail = json.loads(item['detail'])
+    prizes_flat = []
+    for field in detail:
+        prizes_flat.extend(field.split(','))
+    # G3 indices: 4-9 (G3-1 through G3-6)
+    g3_nums = []
+    for idx in range(4, 10):
+        if idx < len(prizes_flat):
+            g3_nums.append(prizes_flat[idx].strip())
+    return g3_nums
+
+def find_digit_positions_in_g3(g3_nums, digit1, digit2, max_distance):
+    """Tìm vị trí 2 chữ số trong G3"""
+    results = []
+    for num_str in g3_nums:
+        num_str = num_str.strip()
+        pos1 = [i for i, ch in enumerate(num_str) if ch == digit1]
+        pos2 = [i for i, ch in enumerate(num_str) if ch == digit2]
+        
+        for p1 in pos1:
+            for p2 in pos2:
+                if p1 != p2:
+                    dist = abs(p1 - p2)
+                    if dist <= max_distance:
+                        results.append({
+                            'digit1': digit1,
+                            'digit2': digit2,
+                            'pos1': p1,
+                            'pos2': p2,
+                            'distance': dist
+                        })
+    return results
+
+def apply_pattern_to_current(g3_nums, pattern):
+    """Áp dụng pattern vào G3 hiện tại"""
+    results = []
+    for num_str in g3_nums:
+        num_str = num_str.strip()
+        if len(num_str) > max(pattern['pos1'], pattern['pos2']):
+            d1 = num_str[pattern['pos1']]
+            d2 = num_str[pattern['pos2']]
+            if d1.isdigit() and d2.isdigit():
+                results.append({'digit1': d1, 'digit2': d2})
+    return results
+
+def calculate_tab4_predictions(data):
+    """Tính toán dự đoán cho Tab 4"""
+    if not data or len(data) < 2:
+        return {"digits": "", "top_dau": "", "top_duoi": "", "match_head": "", "match_tail": ""}
+    
+    # 1. Predicted Digits (Most frequent in last 2 periods)
+    all_digits = []
+    for item in data[:2]:
+        nums = get_all_numbers(item)
+        for n in nums:
+            for d in n: 
+                if d.isdigit():
+                    all_digits.append(d)
+    
+    freq = Counter(all_digits)
+    top_5_digits = [d for d, c in freq.most_common(5)]
+    predicted_digits = sorted(top_5_digits)
+    
+    # 2. Top Head/Tail (Last 3 periods)
+    dau_freq = Counter()
+    duoi_freq = Counter()
+    for item in data[:3]:
+        nums = get_all_numbers(item)
+        for n in nums:
+            if len(n) >= 2:
+                dau_freq[n[-2]] += 1
+                duoi_freq[n[-1]] += 1
+                
+    top_dau = [d for d, c in dau_freq.most_common(5)]
+    top_duoi = [d for d, c in duoi_freq.most_common(5)]
+    
+    # 3. Matches
+    match_head = [d for d in predicted_digits if d in top_dau]
+    match_tail = [d for d in predicted_digits if d in top_duoi]
+    
+    return {
+        "digits": ",".join(predicted_digits),
+        "top_dau": "-".join(top_dau),
+        "top_duoi": "-".join(top_duoi),
+        "match_head": ",".join(match_head) if match_head else "-",
+        "match_tail": ",".join(match_tail) if match_tail else "-"
+    }
 
 # =============================================================================
 # STREAMLIT APP
@@ -407,10 +510,10 @@ with col4:
 st.markdown("---")
 
 # =============================================================================
-# TABS LOGIC
+# TABS LOGIC (UPDATED TO 4 TABS)
 # =============================================================================
 
-tab1, tab2, tab3 = st.tabs(["📊 CẦU LIST 0", "🎯 THIẾU ĐẦU", "🔮 LÔ LẠ"])
+tab1, tab2, tab3, tab4 = st.tabs(["📊 CẦU LIST 0", "🎯 THIẾU ĐẦU", "🔮 LÔ LẠ", "🎲 DỰ ĐOÁN"])
 
 # -----------------------------------------------------------------------------
 # TAB 1: CẦU LIST 0
@@ -785,3 +888,187 @@ with tab3:
                 hide_index=True,
                 column_config=t3_config
             )
+
+# -----------------------------------------------------------------------------
+# TAB 4: DỰ ĐOÁN ĐA NĂNG (NEWLY ADDED)
+# -----------------------------------------------------------------------------
+with tab4:
+    # Determine mode based on region
+    is_multi_station_mode = (region == "Miền Nam" or region == "Miền Trung")
+    
+    if is_multi_station_mode:
+        # Multi-station mode
+        st.markdown(f"##### 📊 KẾT QUẢ TỔNG HỢP CÁC ĐÀI ({selected_day})")
+        
+        if st.button("🔄 Phân Tích Lại"):
+            st.rerun()
+
+        # AUTO ANALYSIS (No button required)
+        with st.spinner(f"Đang tải dữ liệu {len(stations)} đài..."):
+            # Sequential Fetching (More stable for Streamlit)
+            multi_data = {}
+            for stn in stations:
+                try:
+                    # Use shorter timeout (5s)
+                    data, _ = load_data(stn, timeout=5)
+                    if data:
+                        multi_data[stn] = data
+                except Exception as e:
+                    st.error(f"Lỗi tải {stn}: {e}")
+            
+            # Calculate Predictions
+            results = []
+            for stn in stations:
+                if stn in multi_data:
+                    pred = calculate_tab4_predictions(multi_data[stn])
+                    results.append({
+                        "Đài": stn,
+                        "Chữ số dự đoán": pred['digits'],
+                        "Top Đầu": pred['top_dau'],
+                        "Top Đuôi": pred['top_duoi'],
+                        "Trùng Đầu": pred['match_head'],
+                        "Trùng Đuôi": pred['match_tail']
+                    })
+                else:
+                    results.append({"Đài": stn, "Chữ số dự đoán": "Lỗi/Không có DL"})
+            
+            # Display Transposed DataFrame (Stations as Columns)
+            if results:
+                df = pd.DataFrame(results).set_index("Đài").T
+                st.dataframe(df, use_container_width=True)
+    else:
+        # Single station mode (Miền Bắc)
+        st.markdown("##### 🎲 DỰ ĐOÁN LÔ NHÁY & CẶP (Miền Bắc)")
+        
+        if len(st.session_state.raw_data) < 5:
+            st.warning("Cần ít nhất 5 kỳ dữ liệu.")
+        else:
+            # Split layout: Left (Analysis) - Right (Results & Stats)
+            t4_col_left, t4_col_right = st.columns([1.5, 1])
+            
+            # --- LEFT COLUMN: PREDICTION ---
+            with t4_col_left:
+                c1, c2 = st.columns(2)
+                with c1: max_distance = st.number_input("Khoảng cách vị trí tối đa", min_value=1, max_value=10, value=2)
+                with c2: num_digits = st.number_input("Số chữ số dự đoán", min_value=1, max_value=10, value=5)
+                
+                if st.button("🔄 Phân Tích Lại"):
+                    st.rerun()
+
+                # AUTO ANALYSIS (No button required)
+                data = st.session_state.raw_data
+                
+                # 1. Analyze Top Head/Tail
+                dau_freq = Counter()
+                duoi_freq = Counter()
+                for item in data[:3]:
+                    nums = get_all_numbers(item)
+                    for n in nums:
+                        if len(n) >= 2:
+                            dau_freq[n[-2]] += 1
+                            duoi_freq[n[-1]] += 1
+                top_dau = [d for d, c in dau_freq.most_common(5)]
+                top_duoi = [d for d, c in duoi_freq.most_common(5)]
+                
+                # 2. Analyze Pattern (Lô Nháy)
+                latest_item = data[0]
+                prev_item = data[1]
+                
+                latest_g3 = get_prize3_numbers(latest_item)
+                prev_g3 = get_prize3_numbers(prev_item)
+                
+                # Get pairs from latest result
+                latest_nums = get_all_numbers(latest_item)
+                pairs = set()
+                for n in latest_nums:
+                    if len(n) >= 2: 
+                        pairs.add(n[-2:])
+                
+                pair_scores = {}
+                for pair in pairs:
+                    if len(pair) >= 2:
+                        d1, d2 = pair[0], pair[1]
+                        valid_positions = find_digit_positions_in_g3(prev_g3, d1, d2, max_distance)
+                        for pattern in valid_positions:
+                            preds = apply_pattern_to_current(latest_g3, pattern)
+                            for p in preds:
+                                score = max_distance - pattern['distance'] + 1
+                                pd1, pd2 = p['digit1'], p['digit2']
+                                key = tuple(sorted((pd1, pd2)))
+                                pair_scores[key] = pair_scores.get(key, 0) + score
+                
+                if pair_scores:
+                    digit_scores = {}
+                    for (d1, d2), score in pair_scores.items():
+                        digit_scores[d1] = digit_scores.get(d1, 0) + score
+                        digit_scores[d2] = digit_scores.get(d2, 0) + score
+                    
+                    top_digits = [d for d, s in sorted(digit_scores.items(), key=lambda x: -x[1])[:num_digits]]
+                    top_digits = sorted(top_digits)
+                    
+                    st.success(f"**Chữ số dự đoán:** {' - '.join(top_digits)}")
+                    
+                    # Detailed Prediction Info
+                    st.markdown("###### CHI TIẾT DỰ ĐOÁN")
+                    st.info(f"**Top Đầu (3 kỳ):** {' - '.join(top_dau)}")
+                    st.info(f"**Top Đuôi (3 kỳ):** {' - '.join(top_duoi)}")
+                    
+                    match_head = [d for d in top_digits if d in top_dau]
+                    match_tail = [d for d in top_digits if d in top_duoi]
+                    
+                    mc1, mc2 = st.columns(2)
+                    with mc1:
+                        if match_head: st.write(f"✅ **Trùng Đầu:** {', '.join(match_head)}")
+                        else: st.write("❌ **Trùng Đầu:** Không")
+                    with mc2:
+                        if match_tail: st.write(f"✅ **Trùng Đuôi:** {', '.join(match_tail)}")
+                        else: st.write("❌ **Trùng Đuôi:** Không")
+                else:
+                    st.warning("Không tìm thấy mẫu phù hợp trong kỳ này.")
+
+            # --- RIGHT COLUMN: RESULTS & STATS ---
+            with t4_col_right:
+                st.markdown("##### 📋 KẾT QUẢ & THỐNG KÊ")
+                
+                def format_prizes(item):
+                    d = json.loads(item['detail'])
+                    prizes_flat = []
+                    for f in d: prizes_flat += f.split(',')
+                    
+                    # Mapping for MB
+                    labels = ["ĐB", "G1", "G2", "G3", "G4", "G5", "G6", "G7"]
+                    # Indices for MB: ĐB(0), G1(1), G2(2-3), G3(4-9), G4(10-13), G5(14-19), G6(20-22), G7(23-26)
+                    ranges = [(0,1), (1,2), (2,4), (4,10), (10,14), (14,20), (20,23), (23,27)]
+                    
+                    html = f"<div style='font-size:12px; border:1px solid #ddd; padding:5px; border-radius:5px; margin-bottom:5px;'>"
+                    html += f"<div style='color:#d32f2f; font-weight:bold; border-bottom:1px solid #eee; margin-bottom:3px;'>📅 {item.get('openTime','')}</div>"
+                    
+                    for label, (start, end) in zip(labels, ranges):
+                        if start < len(prizes_flat):
+                            vals = prizes_flat[start:end]
+                            vals_str = " - ".join([v.strip() for v in vals if v.strip()])
+                            html += f"<div style='display:flex; justify-content:space-between;'><span><b>{label}:</b></span> <span style='color:#333'>{vals_str}</span></div>"
+                    html += "</div>"
+                    return html
+
+                # Latest Result
+                if len(data) > 0:
+                    st.markdown("**KỲ MỚI NHẤT:**")
+                    st.markdown(format_prizes(data[0]), unsafe_allow_html=True)
+                
+                # Previous Result
+                if len(data) > 1:
+                    st.markdown("**KỲ TRƯỚC ĐÓ:**")
+                    st.markdown(format_prizes(data[1]), unsafe_allow_html=True)
+                
+                # Stats Table (Head/Tail)
+                st.markdown("**THỐNG KÊ ĐẦU/ĐUÔI (3 kỳ):**")
+                stats_rows = []
+                for d in range(10):
+                    d_str = str(d)
+                    stats_rows.append({
+                        "Số": d_str,
+                        "Đầu": dau_freq.get(d_str, 0),
+                        "Đuôi": duoi_freq.get(d_str, 0)
+                    })
+                st.dataframe(pd.DataFrame(stats_rows).set_index("Số").T, use_container_width=True)
