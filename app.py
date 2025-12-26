@@ -256,6 +256,42 @@ def generate_cham_tong(list_missing):
             continue
     return sorted(list(result_set))
 
+def detect_consecutive_repeat(prize_str, min_count=3):
+    """Kiểm tra số có chữ số lặp liên tiếp (≥3 số)"""
+    prize_str = prize_str.strip()
+    if len(prize_str) < min_count:
+        return False, None
+    for i in range(len(prize_str) - min_count + 1):
+        first_digit = prize_str[i]
+        count = 1
+        for j in range(i + 1, len(prize_str)):
+            if prize_str[j] == first_digit: count += 1
+            else: break
+        if count >= min_count:
+            if len(prize_str) >= 2: return True, prize_str[-2:]
+    return False, None
+
+def detect_lap(prize_str):
+    """Kiểm tra số có chữ số lặp lại (không cần liên tiếp)"""
+    prize_str = prize_str.strip()
+    if len(prize_str) < 2: return False, None
+    digit_count = {}
+    for digit in prize_str:
+        if digit.isdigit():
+            digit_count[digit] = digit_count.get(digit, 0) + 1
+    for count in digit_count.values():
+        if count >= 2:
+            if len(prize_str) >= 2: return True, prize_str[-2:]
+    return False, None
+
+def detect_ganh(prize_str):
+    """Kiểm tra số đối xứng (gánh/đảo)"""
+    prize_str = prize_str.strip()
+    if len(prize_str) < 2: return False, None
+    if prize_str == prize_str[::-1]:
+        if len(prize_str) >= 2: return True, prize_str[-2:]
+    return False, None
+
 def get_target_results(prizes_flat, use_duoi_db, use_dau_db, use_duoi_g1, use_dau_g1):
     """Lấy tập hợp kết quả để so sánh (Đuôi/Đầu ĐB/G1)"""
     targets = set()
@@ -290,6 +326,38 @@ def generate_nhi_hop(list_digits):
         for d2 in list_digits:
             result_set.add(f"{d1}{d2}")
     return sorted(list(result_set))
+
+def get_selected_pairs(current_numbers, use_nhay, use_cap, use_dau, use_duoi):
+    """Lọc các cặp số dựa trên tùy chọn (Lô Nháy, Cặp, Đầu/Đuôi Nhiều)"""
+    all_pairs = []
+    for num in current_numbers:
+        if len(num) >= 2:
+            last2 = num[-2:]
+            if last2.isdigit() and len(last2) == 2:
+                all_pairs.append(last2)
+    
+    pair_counts = Counter(all_pairs)
+    selected_pairs = set()
+    if use_nhay:
+        for pair, count in pair_counts.items():
+            if count >= 2: selected_pairs.add(pair)
+    if use_cap:
+        for pair in pair_counts.keys():
+            rev = pair[1] + pair[0]
+            if rev in pair_counts and pair != rev: selected_pairs.add(pair)
+    if use_dau:
+        head_counts = Counter([p[0] for p in all_pairs])
+        for head, count in head_counts.items():
+            if count >= 3:
+                for p in all_pairs:
+                    if p[0] == head: selected_pairs.add(p)
+    if use_duoi:
+        tail_counts = Counter([p[1] for p in all_pairs])
+        for tail, count in tail_counts.items():
+            if count >= 3:
+                for p in all_pairs:
+                    if p[1] == tail: selected_pairs.add(p)
+    return selected_pairs
 
 # =============================================================================
 # TAB 4 HELPER FUNCTIONS (NEWLY ADDED)
@@ -492,6 +560,21 @@ if 'tab2_duoi_db' not in st.session_state: st.session_state.tab2_duoi_db = True
 if 'tab2_dau_db' not in st.session_state: st.session_state.tab2_dau_db = False
 if 'tab2_duoi_g1' not in st.session_state: st.session_state.tab2_duoi_g1 = False
 if 'tab2_dau_g1' not in st.session_state: st.session_state.tab2_dau_g1 = False
+
+# Tab 3 states
+if "tab3_use_special" not in st.session_state: st.session_state.tab3_use_special = True
+if "tab3_use_consecutive" not in st.session_state: st.session_state.tab3_use_consecutive = False
+if "tab3_use_lap" not in st.session_state: st.session_state.tab3_use_lap = False
+if "tab3_use_ganh" not in st.session_state: st.session_state.tab3_use_ganh = False
+if "tab3_keep_dup" not in st.session_state: st.session_state.tab3_keep_dup = False
+if "tab3_nhi_hop_mode" not in st.session_state: st.session_state.tab3_nhi_hop_mode = "Mặc định"
+if "tab3_filter" not in st.session_state: st.session_state.tab3_filter = ""
+
+# Tab 4 states
+if "tab4_use_nhay" not in st.session_state: st.session_state.tab4_use_nhay = True
+if "tab4_use_cap" not in st.session_state: st.session_state.tab4_use_cap = True
+if "tab4_use_dau" not in st.session_state: st.session_state.tab4_use_dau = True
+if "tab4_use_duoi" not in st.session_state: st.session_state.tab4_use_duoi = True
 
 # =============================================================================
 # TOP CONTROLS
@@ -859,22 +942,33 @@ with tab2:
 # TAB 3: LÔ LẠ & PATTERN
 # -----------------------------------------------------------------------------
 with tab3:
-    st.markdown("##### 🔮 PHÂN TÍCH LÔ LẠ (Pattern 1-2 số duy nhất)")
-    st.caption("Tìm các giải có ít chữ số (vd: 111, 121, 123) và tạo dàn nuôi 10 ngày.")
+    st.markdown("##### 🔮 PHÂN TÍCH LÔ LẠ (Tùy chọn đa dạng)")
+    
+    with st.expander("⚙️ CẤU HÌNH PHÂN TÍCH LÔ LẠ", expanded=True):
+        c1, c2, c3, c4 = st.columns([2, 2, 3, 3])
+        with c1:
+            st.session_state.tab3_use_special = st.checkbox("≤3 CS duy nhất", st.session_state.tab3_use_special)
+            st.session_state.tab3_use_consecutive = st.checkbox("Lặp l.tiếp (≥3)", st.session_state.tab3_use_consecutive)
+        with c2:
+            st.session_state.tab3_use_lap = st.checkbox("Lặp", st.session_state.tab3_use_lap)
+            st.session_state.tab3_use_ganh = st.checkbox("Gánh/Đảo", st.session_state.tab3_use_ganh)
+        with c3:
+            st.session_state.tab3_keep_dup = st.checkbox("Giữ số trùng", st.session_state.tab3_keep_dup)
+            st.session_state.tab3_nhi_hop_mode = st.radio("Chế độ Nhị hợp:", ["Mặc định", "Chỉ 1 giải", "Cả hai"], index=["Mặc định", "Chỉ 1 giải", "Cả hai"].index(st.session_state.tab3_nhi_hop_mode), horizontal=True)
+        with c4:
+            st.session_state.tab3_filter = st.text_input("Lọc số (vd: 01,02)", st.session_state.tab3_filter)
+            filter_nums = [p.strip() for p in st.session_state.tab3_filter.replace(",", " ").split() if p.strip().isdigit() and len(p.strip())==2]
 
     if not st.session_state.raw_data:
         st.info("Chưa có dữ liệu.")
     else:
-        t3_left, t3_right = st.columns([2, 6])
+        t3_left, t3_right = st.columns([2, 7])
 
         with t3_left:
-            # Result table showing all Lô Ra (2 digits)
             rows_res = []
             for item in st.session_state.raw_data:
                 prizes_flat = DataParser.get_prizes_flat(item)
                 db = prizes_flat[0] if len(prizes_flat) > 0 else ""
-                
-                # Get all 2-digit results
                 current_los = DataParser.get_two_digit_numbers(prizes_flat)
                 lo_ra = " ".join(sorted(set(current_los)))
                 rows_res.append([item['turnNum'], db, lo_ra])
@@ -888,113 +982,149 @@ with tab3:
                 column_config={
                     "Kỳ": st.column_config.TextColumn("Kỳ", width=30),
                     "ĐB": st.column_config.TextColumn("ĐB", width=30),
-                    "Lô Ra": st.column_config.TextColumn("Lô Ra", width="large")
+                    "Lô Ra": st.column_config.TextColumn("Lô Ra", width=50)
                 }
             )
 
         with t3_right:
-            # Analysis Logic for Tab 3
             max_prize_index = 9 if "Bắc" in region else 13
+            nhi_hop_mode_val = {"Mặc định": 0, "Chỉ 1 giải": 1, "Cả hai": 2}[st.session_state.tab3_nhi_hop_mode]
             
             processed = []
             for item in st.session_state.raw_data:
                 prizes_flat = DataParser.get_prizes_flat(item)
-                
                 special_los = []
                 day_digit_counts = Counter()
+                prize_occurrence_counts = Counter()
                 
-                # Analyze prizes
                 for idx, prize in enumerate(prizes_flat):
                     if idx > max_prize_index: break
-                    is_special, lo = detect_special_pattern(prize)
-                    if is_special and lo:
-                        prize_digits = set([d for d in prize.strip() if d.isdigit()])
-                        if prize_digits:
-                            special_los.append("".join(sorted(list(prize_digits))))
-                            for d in prize_digits: day_digit_counts[d] += 1
+                    prize = prize.strip()
+                    found = False
+                    if st.session_state.tab3_use_consecutive:
+                        ok, _ = detect_consecutive_repeat(prize)
+                        if ok: found = True
+                    if not found and st.session_state.tab3_use_lap:
+                        ok, _ = detect_lap(prize)
+                        if ok: found = True
+                    if not found and st.session_state.tab3_use_ganh:
+                        ok, _ = detect_ganh(prize)
+                        if ok: found = True
+                    if not found and st.session_state.tab3_use_special:
+                        ok, _ = detect_special_pattern(prize)
+                        if ok: found = True
+                    
+                    if found:
+                        digits = [d for d in prize if d.isdigit()]
+                        if st.session_state.tab3_keep_dup:
+                            special_los.append("".join(sorted(digits)))
+                        else:
+                            special_los.append("".join(sorted(list(set(digits)))))
+                        for d in set(digits): prize_occurrence_counts[d] += 1
+                        for d in digits: day_digit_counts[d] += 1
                 
-                list0 = sorted(list(set(special_los)))
+                if st.session_state.tab3_keep_dup: list0 = sorted(special_los)
+                else: list0 = sorted(list(set(special_los)))
                 
                 dan_nhi_hop = []
-                digits_union = sorted(list(set("".join(list0)))) if list0 else []
-                ranked_all = sorted(day_digit_counts.items(), key=lambda kv: kv[1], reverse=True)
-                final_digits = []
-                if digits_union:
-                    ranked = sorted(digits_union, key=lambda d: day_digit_counts.get(d, 0), reverse=True)
-                    final_digits = ranked[:3]
-                else:
-                    final_digits = [d for d, _ in ranked_all[:3]]
-                if len(final_digits) < 3:
-                    for d, _ in ranked_all:
-                        if d not in final_digits:
-                            final_digits.append(d)
-                        if len(final_digits) == 3:
-                            break
-                if len(final_digits) == 3:
-                    dan_nhi_hop = generate_nhi_hop(sorted(final_digits))
-                
+                top_str = ""
+                if list0:
+                    all_digits = set("".join(list0))
+                    # Top logic
+                    if nhi_hop_mode_val in (1, 2) and len(list0) == 1:
+                        candidates = [d for d in all_digits if day_digit_counts[d] >= 1]
+                    else:
+                        candidates = [d for d in all_digits if day_digit_counts[d] >= 2]
+                    
+                    if candidates:
+                        keyed = {d: (prize_occurrence_counts[d], day_digit_counts[d]) for d in candidates}
+                        unique_levels = sorted(list(set(keyed.values())), reverse=True)
+                        top_levels = unique_levels[:2]
+                        final_top = [d for d in candidates if keyed[d] in top_levels]
+                        final_top.sort(key=lambda d: (-keyed[d][0], -keyed[d][1], d))
+                        top_str = " - ".join(final_top)
+                        
+                        # Generate dan nhi hop based on mode
+                        sel_digits = []
+                        if not st.session_state.tab3_use_consecutive and not st.session_state.tab3_use_lap and not st.session_state.tab3_use_ganh:
+                            if len(list0) >= 2:
+                                sel_digits = [d for d in all_digits if day_digit_counts[d] >= 2]
+                            elif len(list0) == 1 and nhi_hop_mode_val in (1, 2):
+                                sel_digits = sorted(list(all_digits))
+                        else:
+                            if st.session_state.tab3_use_lap and len(all_digits) > 3:
+                                sel_digits = [d for d in all_digits if day_digit_counts[d] >= 2]
+                            else:
+                                sel_digits = sorted(list(all_digits))
+                        
+                        if sel_digits: dan_nhi_hop = generate_nhi_hop(sorted(sel_digits))
+
                 current_los = DataParser.get_two_digit_numbers(prizes_flat)
-                processed.append({"ky": item['turnNum'], "list0": list0, "dan": dan_nhi_hop, "res": current_los})
+                processed.append({"ky": item['turnNum'], "list0": list0, "dan": dan_nhi_hop, "top": top_str, "res": current_los})
 
             def diff(src, target): return sorted(list(set(src) - set(target)))
 
             rows_anal = []
             for i in range(len(processed)):
                 curr = processed[i]
-                row = [curr["ky"], ",".join(curr["list0"]), " ".join(curr["dan"])]
+                is_multi = len(curr["list0"]) > 1
+                is_single = len(curr["list0"]) == 1
                 
-                # Check K1-K10
+                should_show = False
+                if nhi_hop_mode_val == 1: should_show = is_single
+                elif nhi_hop_mode_val == 2: should_show = is_single or is_multi
+                else: should_show = is_multi
+                
+                if not should_show:
+                    rows_anal.append([""] * 13)
+                    continue
+
+                row = [",".join(curr["list0"]), " ".join(curr["dan"][:15]) + ("..." if len(curr["dan"])>15 else ""), curr["top"]]
+                
                 if curr["dan"]:
                     current_dan = curr["dan"][:]
                     for k in range(1, 11):
                         target_idx = i - k
-                        if target_idx < 0:
-                            row.append("")
+                        if target_idx < 0: row.append("")
                         else:
-                            res_target = processed[target_idx]["res"]
-                            current_dan = diff(current_dan, res_target)
-                            row.append(" ".join(current_dan) if current_dan else "-")
-                else:
-                    row.extend([""] * 10)
+                            row.append(" ".join(diff(current_dan, processed[target_idx]["res"]) if diff(current_dan, processed[target_idx]["res"]) else "-"))
+                            current_dan = diff(current_dan, processed[target_idx]["res"])
+                else: row.extend([""] * 10)
                 rows_anal.append(row)
             
-            cols_anal = ["Kỳ", "Lô Lạ", "Dàn Nhị Hợp"] + [f"K{k}" for k in range(1, 11)]
+            cols_anal = ["Lô Lạ", "Dàn Nhị Hợp", "Top"] + [f"K{k}" for k in range(1, 11)]
             df_anal = pd.DataFrame(rows_anal, columns=cols_anal)
             
-            # Styling
             t3_config = {
-                "Kỳ": st.column_config.TextColumn("Kỳ", width=30),
                 "Lô Lạ": st.column_config.TextColumn("Lô Lạ", width=50),
                 "Dàn Nhị Hợp": st.column_config.TextColumn("Dàn Nhị Hợp", width="medium"),
+                "Top": st.column_config.TextColumn("Top", width=50),
             }
-            for k in range(1, 11):
-                t3_config[f"K{k}"] = st.column_config.TextColumn(f"K{k}", width=50)
+            for k in range(1, 11): t3_config[f"K{k}"] = st.column_config.TextColumn(f"K{k}", width=40)
 
             k_colors = ["#F1F8E9", "#DCEDC8", "#C5E1A5", "#AED581", "#9CCC65", "#8BC34A", "#7CB342", "#689F38", "#558B2F", "#33691E"]
 
             def highlight_t3(s):
                 styles = []
                 for v in s:
-                    if s.name == "Lô Lạ": styles.append('background-color: #ffebee; color: #c0392b')
+                    if not v or v == "": styles.append('')
+                    elif s.name == "Lô Lạ": styles.append('background-color: #ffebee; color: #c0392b')
                     elif s.name == "Dàn Nhị Hợp": styles.append('background-color: #e3f2fd; color: #1565c0')
+                    elif s.name == "Top": styles.append('background-color: #fff3e0; color: #e65100')
                     elif s.name.startswith("K"):
                         try:
                             idx = int(s.name[1:]) - 1
-                            if v and v.strip() != "" and v.strip() != "-":
-                                styles.append(f'background-color: {k_colors[idx]}; color: black')
-                            else:
-                                styles.append('')
+                            if v and v.strip() not in ("", "-"): styles.append(f'background-color: {k_colors[idx]}; color: black')
+                            else: styles.append('')
                         except: styles.append('')
                     else: styles.append('')
+                    
+                    # Filter highlighting
+                    if filter_nums and styles[-1] != '' and any(n in str(v) for n in filter_nums):
+                        styles[-1] = 'background-color: #FFF3CD; color: #000000; font-weight: bold'
                 return styles
 
-            st.dataframe(
-                df_anal.style.apply(highlight_t3),
-                height=700,
-                use_container_width=True,
-                hide_index=True,
-                column_config=t3_config
-            )
+            st.dataframe(df_anal.style.apply(highlight_t3), height=700, use_container_width=True, hide_index=True, column_config=t3_config)
 
 # -----------------------------------------------------------------------------
 # TAB 4: DỰ ĐOÁN ĐA NĂNG (NEWLY ADDED)
@@ -1050,15 +1180,20 @@ with tab4:
         if len(st.session_state.raw_data) < 5:
             st.warning("Cần ít nhất 5 kỳ dữ liệu.")
         else:
+            with st.expander("⚙️ PHƯƠNG PHÁP LỌC & CẤU HÌNH", expanded=True):
+                c1, c2, c3, c4, c5, c6 = st.columns([2, 1, 1, 1, 1, 1])
+                with c1: max_distance = st.number_input("Vị trí tối đa", min_value=1, max_value=10, value=2)
+                with c2: num_digits = st.number_input("Số CS dự đoán", min_value=1, max_value=10, value=5)
+                with c3: st.session_state.tab4_use_nhay = st.checkbox("Lô Nháy", st.session_state.tab4_use_nhay)
+                with c4: st.session_state.tab4_use_cap = st.checkbox("Lô Cặp", st.session_state.tab4_use_cap)
+                with c5: st.session_state.tab4_use_dau = st.checkbox("Đầu Nhiều", st.session_state.tab4_use_dau)
+                with c6: st.session_state.tab4_use_duoi = st.checkbox("Đuôi Nhiều", st.session_state.tab4_use_duoi)
+
             # Split layout: Left (Analysis) - Right (Results & Stats)
             t4_col_left, t4_col_right = st.columns([1.5, 1])
             
             # --- LEFT COLUMN: PREDICTION ---
             with t4_col_left:
-                c1, c2 = st.columns(2)
-                with c1: max_distance = st.number_input("Khoảng cách vị trí tối đa", min_value=1, max_value=10, value=2)
-                with c2: num_digits = st.number_input("Số chữ số dự đoán", min_value=1, max_value=10, value=5)
-                
                 if st.button("🔄 Phân Tích Lại"):
                     st.rerun()
 
@@ -1077,19 +1212,22 @@ with tab4:
                 top_dau = [d for d, c in dau_freq.most_common(5)]
                 top_duoi = [d for d, c in duoi_freq.most_common(5)]
                 
-                # 2. Analyze Pattern (Lô Nháy)
+                # 2. Analyze Pattern
                 latest_item = data[0]
                 prev_item = data[1]
                 
                 latest_g3 = get_prize3_numbers(latest_item)
                 prev_g3 = get_prize3_numbers(prev_item)
                 
-                # Get pairs from latest result
+                # Get selected pairs from latest result
                 latest_nums = get_all_numbers(latest_item)
-                pairs = set()
-                for n in latest_nums:
-                    if len(n) >= 2: 
-                        pairs.add(n[-2:])
+                pairs = get_selected_pairs(
+                    latest_nums, 
+                    st.session_state.tab4_use_nhay, 
+                    st.session_state.tab4_use_cap,
+                    st.session_state.tab4_use_dau,
+                    st.session_state.tab4_use_duoi
+                )
                 
                 pair_scores = {}
                 for pair in pairs:
