@@ -163,25 +163,97 @@ def load_data(station_name, timeout=10):
 # LOGIC HELPER FUNCTIONS (FOR TAB 1-3)
 # =============================================================================
 
+class DataParser:
+    """Utility class for parsing lottery data - eliminates duplicate code"""
+    
+    @staticmethod
+    def get_prizes_flat(item: dict) -> list[str]:
+        """Extract all prizes from item detail"""
+        try:
+            detail = json.loads(item['detail'])
+            prizes_flat = []
+            for field in detail:
+                prizes_flat += field.split(",")
+            return prizes_flat
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return []
+    
+    @staticmethod
+    def get_two_digit_numbers(prizes_flat: list[str]) -> list[str]:
+        """Extract all 2-digit numbers from prizes"""
+        try:
+            results = []
+            for prize in prizes_flat:
+                prize = prize.strip()
+                if len(prize) >= 2 and prize[-2:].isdigit():
+                    results.append(prize[-2:])
+            return results
+        except Exception:
+            return []
+    
+    @staticmethod
+    def get_list0(prizes_flat: list[str]) -> list[str]:
+        """Calculate List 0 (missing digits 0-9)"""
+        try:
+            g_nums = []
+            for prize in prizes_flat:
+                g_nums.extend([ch for ch in prize.strip() if ch.isdigit()])
+            counter = Counter(g_nums)
+            counts = [counter.get(str(d), 0) for d in range(10)]
+            return [str(i) for i, v in enumerate(counts) if v == 0]
+        except Exception:
+            return []
+    
+    @staticmethod
+    def get_missing_heads(prizes_flat: list[str]) -> list[str]:
+        """Calculate missing head digits (first digit of prizes)"""
+        try:
+            heads = []
+            for p in prizes_flat:
+                p = p.strip()
+                if len(p) >= 2:
+                    heads.append(p[-2]) # Numerical head is tens digit
+                elif len(p) == 1:
+                    heads.append('0')
+            
+            counter = Counter(heads)
+            counts = [counter.get(str(d), 0) for d in range(10)]
+            return [str(i) for i, v in enumerate(counts) if v == 0]
+        except Exception:
+            return []
+    
+    @staticmethod
+    def bridge_ab(list1: list[str], list2: list[str]) -> list[str]:
+        """Create all combinations of two lists (AB and BA)"""
+        try:
+            result_set = set()
+            for a in list1:
+                for b in list2:
+                    result_set.add(a + b)
+                    result_set.add(b + a)
+            return sorted(list(result_set))
+        except Exception:
+            return []
+
 def generate_cham_tong(list_missing):
     """Tạo dàn Chạm + Tổng từ list số thiếu"""
     result_set = set()
     for d_str in list_missing:
         try:
-            d = int(d_str)
+            d = str(d_str)
+            # Chạm
+            for i in range(100):
+                s = f"{i:02d}"
+                if d in s:
+                    result_set.add(s)
+            # Tổng
+            for i in range(100):
+                s = f"{i:02d}"
+                digit_sum = (int(s[0]) + int(s[1])) % 10
+                if digit_sum == int(d):
+                    result_set.add(s)
         except:
             continue
-        # Chạm
-        for i in range(100):
-            s = f"{i:02d}"
-            if str(d) in s:
-                result_set.add(s)
-        # Tổng
-        for i in range(100):
-            s = f"{i:02d}"
-            digit_sum = (int(s[0]) + int(s[1])) % 10
-            if digit_sum == d:
-                result_set.add(s)
     return sorted(list(result_set))
 
 def get_target_results(prizes_flat, use_duoi_db, use_dau_db, use_duoi_g1, use_dau_g1):
@@ -279,47 +351,90 @@ def apply_pattern_to_current(g3_nums, pattern):
     return results
 
 def calculate_tab4_predictions(data):
-    """Tính toán dự đoán cho Tab 4"""
+    """Calculate Tab 4 style predictions for a single station"""
     if not data or len(data) < 2:
-        return {"digits": "", "top_dau": "", "top_duoi": "", "match_head": "", "match_tail": ""}
+        return {
+            "digits": "Không đủ dữ liệu",
+            "top_dau": "",
+            "top_duoi": "",
+            "match_head": "",
+            "match_tail": ""
+        }
     
-    # 1. Predicted Digits (Most frequent in last 2 periods)
-    all_digits = []
-    for item in data[:2]:
-        nums = get_all_numbers(item)
-        for n in nums:
-            for d in n: 
-                if d.isdigit():
-                    all_digits.append(d)
+    predictions = {}
     
-    freq = Counter(all_digits)
-    top_5_digits = [d for d, c in freq.most_common(5)]
-    predicted_digits = sorted(top_5_digits)
+    # 1. Period indices (0=latest, 1=previous)
+    period_data = []
+    for i in range(min(2, len(data))):
+        item = data[i]
+        prizes_flat = DataParser.get_prizes_flat(item)
+        period_data.append(prizes_flat)
     
-    # 2. Top Head/Tail (Last 3 periods)
+    # Analyze all positions across 2 periods
+    position_digits = {}  # position -> list of digits
+    for period_idx, prizes in enumerate(period_data):
+        for prize_idx, prize in enumerate(prizes):
+            prize = prize.strip()
+            for pos_idx, digit in enumerate(prize):
+                if digit.isdigit():
+                    key = (prize_idx, pos_idx)
+                    if key not in position_digits:
+                        position_digits[key] = []
+                    position_digits[key].append(digit)
+    
+    # Find positions with same digit in both periods
+    matching_digits = set()
+    for key, digits_list in position_digits.items():
+        if len(digits_list) >= 2:
+            digit_counter = Counter(digits_list)
+            for digit, count in digit_counter.items():
+                if count >= 2:
+                    matching_digits.add(digit)
+    
+    # If we found matching digits, use those. Otherwise, use most frequent
+    if matching_digits:
+        predicted_digits = sorted(list(matching_digits))[:5]
+    else:
+        all_digits = []
+        for prizes in period_data:
+            for prize in prizes:
+                for ch in prize.strip():
+                    if ch.isdigit():
+                        all_digits.append(ch)
+        digit_freq = Counter(all_digits)
+        predicted_digits = [d for d, c in digit_freq.most_common(5)]
+    
+    predictions["digits"] = ",".join(predicted_digits)
+    
+    # 2. Calculate Top Đầu/Đuôi from last 3 periods
     dau_freq = Counter()
     duoi_freq = Counter()
-    for item in data[:3]:
-        nums = get_all_numbers(item)
-        for n in nums:
-            if len(n) >= 2:
-                dau_freq[n[-2]] += 1
-                duoi_freq[n[-1]] += 1
-                
-    top_dau = [d for d, c in dau_freq.most_common(5)]
-    top_duoi = [d for d, c in duoi_freq.most_common(5)]
+    periods_for_top = min(len(data), 3)
+    for item in data[:periods_for_top]:
+        pf = DataParser.get_prizes_flat(item)
+        for num in pf:
+            num = num.strip()
+            if len(num) >= 2 and num[-2:].isdigit():
+                last2 = num[-2:]
+                dau_freq[last2[0]] += 1
+                duoi_freq[last2[1]] += 1
     
-    # 3. Matches
-    match_head = [d for d in predicted_digits if d in top_dau]
-    match_tail = [d for d in predicted_digits if d in top_duoi]
+    top_dau_list = sorted(dau_freq.items(), key=lambda x: -x[1])[:5]
+    top_duoi_list = sorted(duoi_freq.items(), key=lambda x: -x[1])[:5]
     
-    return {
-        "digits": ",".join(predicted_digits),
-        "top_dau": "-".join(top_dau),
-        "top_duoi": "-".join(top_duoi),
-        "match_head": ",".join(match_head) if match_head else "-",
-        "match_tail": ",".join(match_tail) if match_tail else "-"
-    }
+    predictions["top_dau"] = " - ".join([f"{d}" for d, c in top_dau_list])
+    predictions["top_duoi"] = " - ".join([f"{d}" for d, c in top_duoi_list])
+    
+    # 3. Check matches
+    top_dau_set = {d for d, c in top_dau_list}
+    top_duoi_set = {d for d, c in top_duoi_list}
+    match_head = [d for d in predicted_digits if d in top_dau_set]
+    match_tail = [d for d in predicted_digits if d in top_duoi_set]
+    
+    predictions["match_head"] = ",".join(match_head) if match_head else "-"
+    predictions["match_tail"] = ",".join(match_tail) if match_tail else "-"
+    
+    return predictions
 
 # =============================================================================
 # STREAMLIT APP
@@ -519,6 +634,22 @@ tab1, tab2, tab3, tab4 = st.tabs(["📊 CẦU LIST 0", "🎯 THIẾU ĐẦU", "�
 # TAB 1: CẦU LIST 0
 # -----------------------------------------------------------------------------
 with tab1:
+    # 🔮 TOP PREDICTION BANNER (Sync with Tab 4)
+    if st.session_state.raw_data:
+        pred = calculate_tab4_predictions(st.session_state.raw_data)
+        st.markdown(f"""
+        <div style="background-color: #fdf2f2; border-left: 5px solid #ff4b4b; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
+            <p style="margin-bottom: 5px;"><b style="color: #ff4b4b; font-size: 16px;">🔮 DỰ ĐOÁN TỪ TAB DỰ ĐOÁN</b></p>
+            <div style="display: flex; flex-wrap: wrap; gap: 20px;">
+                <span><b>Chữ số:</b> <span style="color: #ff4b4b; font-size: 15px; font-weight: bold;">{pred['digits'] or '...'}</span></span>
+                <span><b style="color: #D32F2F;">→ Trùng đầu:</b> {pred['match_head']}</span>
+                <span><b style="color: #C2185B;">| Trùng đuôi:</b> {pred['match_tail']}</span>
+                <span><b>Top Đầu:</b> <span style="color: #C62828;">{pred['top_dau']}</span></span>
+                <span><b>Top Đuôi:</b> <span style="color: #C62828;">{pred['top_duoi']}</span></span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
     with st.expander("⚙️ CẤU HÌNH GIẢI PHÂN TÍCH", expanded=False):
         c1, c2, c3 = st.columns([1, 1, 8])
         with c1:
@@ -554,9 +685,7 @@ with tab1:
             
             rows_res = []
             for item in st.session_state.raw_data:
-                d = json.loads(item['detail'])
-                prizes_flat = []
-                for f in d: prizes_flat += f.split(',')
+                prizes_flat = DataParser.get_prizes_flat(item)
                 row = [item['turnNum']]
                 for idx in display_indices:
                     row.append(prizes_flat[idx] if idx < len(prizes_flat) else "")
@@ -576,23 +705,18 @@ with tab1:
             st.markdown("##### PHÂN TÍCH LIST 0 & SÓT")
             processed = []
             for item in st.session_state.raw_data:
-                d = json.loads(item['detail'])
-                prizes_flat = []
-                for f in d: prizes_flat += f.split(',')
+                prizes_flat = DataParser.get_prizes_flat(item)
+                
                 g_nums = []
                 for idx in st.session_state.selected_giai:
                     if idx < len(prizes_flat):
                         g_nums.extend([ch for ch in prizes_flat[idx].strip() if ch.isdigit()])
                 counter = Counter(g_nums)
                 list0 = [str(i) for i, v in enumerate([counter.get(str(d), 0) for d in range(10)]) if v == 0]
-                res_los = [lo[-2:] for lo in prizes_flat if len(lo)>=2 and lo[-2:].isdigit()]
+                
+                res_los = DataParser.get_two_digit_numbers(prizes_flat)
                 processed.append({"ky": item['turnNum'], "list0": list0, "res": res_los})
 
-            def bridge_ab(l1, l2):
-                s = set()
-                for a in l1:
-                    for b in l2: s.add(a+b); s.add(b+a)
-                return sorted(list(s))
             def diff(src, target): return sorted(list(set(src) - set(target)))
 
             rows_anal = []
@@ -600,15 +724,16 @@ with tab1:
                 curr = processed[i]
                 row = [curr["ky"], ",".join(curr["list0"])]
                 
-                # K0
+                # K0 (N1-N0 bridge)
                 if i+1 < len(processed):
-                    k0 = diff(bridge_ab(processed[i+1]["list0"], curr["list0"]), curr["res"])
+                    dan = DataParser.bridge_ab(processed[i+1]["list0"], curr["list0"])
+                    k0 = diff(dan, curr["res"])
                     row.append(" ".join(k0))
                 else: row.append("")
                 
                 # K1-K7
                 if i>0 and i+1 < len(processed):
-                    dan = bridge_ab(processed[i+1]["list0"], processed[i]["list0"])
+                    dan = DataParser.bridge_ab(processed[i+1]["list0"], processed[i]["list0"])
                     for k in range(7):
                         t_idx = i - k
                         if t_idx < 0: row.append("")
@@ -657,9 +782,7 @@ with tab2:
             # Simple result table
             rows_simple = []
             for item in st.session_state.raw_data:
-                d = json.loads(item['detail'])
-                prizes_flat = []
-                for f in d: prizes_flat += f.split(',')
+                prizes_flat = DataParser.get_prizes_flat(item)
                 db = prizes_flat[0] if len(prizes_flat)>0 else ""
                 g1 = prizes_flat[1] if len(prizes_flat)>1 else ""
                 rows_simple.append([item['turnNum'], db, g1])
@@ -678,12 +801,8 @@ with tab2:
             # Analysis Logic
             processed_data = []
             for item in st.session_state.raw_data:
-                d = json.loads(item['detail'])
-                prizes_flat = []
-                for f in d: prizes_flat += f.split(',')
-                heads = [p[0] for p in prizes_flat if p.strip()]
-                counter = Counter(heads)
-                missing = [str(i) for i, v in enumerate([counter.get(str(d),0) for d in range(10)]) if v==0]
+                prizes_flat = DataParser.get_prizes_flat(item)
+                missing = DataParser.get_missing_heads(prizes_flat)
                 processed_data.append({"ky": item['turnNum'], "missing": missing, "full": prizes_flat})
             
             rows_t2 = []
@@ -752,17 +871,11 @@ with tab3:
             # Result table showing all Lô Ra (2 digits)
             rows_res = []
             for item in st.session_state.raw_data:
-                d = json.loads(item['detail'])
-                prizes_flat = []
-                for f in d: prizes_flat += f.split(',')
+                prizes_flat = DataParser.get_prizes_flat(item)
                 db = prizes_flat[0] if len(prizes_flat) > 0 else ""
                 
                 # Get all 2-digit results
-                current_los = []
-                for lo in prizes_flat:
-                    lo = lo.strip()
-                    if len(lo) >= 2 and lo[-2:].isdigit():
-                        current_los.append(lo[-2:])
+                current_los = DataParser.get_two_digit_numbers(prizes_flat)
                 lo_ra = " ".join(sorted(set(current_los)))
                 rows_res.append([item['turnNum'], db, lo_ra])
             
@@ -785,9 +898,7 @@ with tab3:
             
             processed = []
             for item in st.session_state.raw_data:
-                detail = json.loads(item['detail'])
-                prizes_flat = []
-                for field in detail: prizes_flat += field.split(",")
+                prizes_flat = DataParser.get_prizes_flat(item)
                 
                 special_los = []
                 day_digit_counts = Counter()
@@ -822,11 +933,7 @@ with tab3:
                 if len(final_digits) == 3:
                     dan_nhi_hop = generate_nhi_hop(sorted(final_digits))
                 
-                current_los = []
-                for lo in prizes_flat:
-                    lo = lo.strip()
-                    if len(lo) >= 2 and lo[-2:].isdigit(): current_los.append(lo[-2:])
-                
+                current_los = DataParser.get_two_digit_numbers(prizes_flat)
                 processed.append({"ky": item['turnNum'], "list0": list0, "dan": dan_nhi_hop, "res": current_los})
 
             def diff(src, target): return sorted(list(set(src) - set(target)))
@@ -1031,9 +1138,8 @@ with tab4:
                 st.markdown("##### 📋 KẾT QUẢ & THỐNG KÊ")
                 
                 def format_prizes(item):
-                    d = json.loads(item['detail'])
-                    prizes_flat = []
-                    for f in d: prizes_flat += f.split(',')
+                    prizes_flat = DataParser.get_prizes_flat(item)
+                    if not prizes_flat: return "<div>Không có dữ liệu</div>"
                     
                     # Mapping for MB
                     labels = ["ĐB", "G1", "G2", "G3", "G4", "G5", "G6", "G7"]
