@@ -721,14 +721,14 @@ with tab1:
     if st.session_state.raw_data:
         pred = calculate_tab4_predictions(st.session_state.raw_data)
         st.markdown(f"""
-        <div style="background-color: #fdf2f2; border-left: 5px solid #ff4b4b; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
-            <p style="margin-bottom: 5px;"><b style="color: #ff4b4b; font-size: 16px;">🔮 DỰ ĐOÁN TỪ TAB DỰ ĐOÁN</b></p>
-            <div style="display: flex; flex-wrap: wrap; gap: 20px;">
-                <span><b>Chữ số:</b> <span style="color: #ff4b4b; font-size: 15px; font-weight: bold;">{pred['digits'] or '...'}</span></span>
-                <span><b style="color: #D32F2F;">→ Trùng đầu:</b> {pred['match_head']}</span>
-                <span><b style="color: #C2185B;">| Trùng đuôi:</b> {pred['match_tail']}</span>
-                <span><b>Top Đầu:</b> <span style="color: #C62828;">{pred['top_dau']}</span></span>
-                <span><b>Top Đuôi:</b> <span style="color: #C62828;">{pred['top_duoi']}</span></span>
+        <div style="background-color: #1e1e1e; border-left: 5px solid #ff4b4b; padding: 12px; border-radius: 5px; margin-bottom: 15px; border: 1px solid #333;">
+            <p style="margin-bottom: 8px;"><b style="color: #ff4b4b; font-size: 16px;">🔮 TOP DỰ ĐOÁN (Đã đồng bộ)</b></p>
+            <div style="display: flex; flex-wrap: wrap; gap: 25px;">
+                <span><b style="color: #ccc;">Chữ số:</b> <span style="color: #ffffff; font-size: 15px; font-weight: bold;">{pred['digits'] or '...'}</span></span>
+                <span><b style="color: #ff4b4b;">→ Trùng đầu:</b> <span style="color: #ffffff;">{pred['match_head']}</span></span>
+                <span><b style="color: #ff4b4b;">| Trùng đuôi:</b> <span style="color: #ffffff;">{pred['match_tail']}</span></span>
+                <span><b style="color: #ccc;">Top Đầu:</b> <span style="color: #ffc107;">{pred['top_dau']}</span></span>
+                <span><b style="color: #ccc;">Top Đuôi:</b> <span style="color: #ffc107;">{pred['top_duoi']}</span></span>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -1284,14 +1284,14 @@ with tab4:
                     # Indices for MB: ĐB(0), G1(1), G2(2-3), G3(4-9), G4(10-13), G5(14-19), G6(20-22), G7(23-26)
                     ranges = [(0,1), (1,2), (2,4), (4,10), (10,14), (14,20), (20,23), (23,27)]
                     
-                    html = f"<div style='font-size:12px; border:1px solid #ddd; padding:5px; border-radius:5px; margin-bottom:5px;'>"
-                    html += f"<div style='color:#d32f2f; font-weight:bold; border-bottom:1px solid #eee; margin-bottom:3px;'>📅 {item.get('openTime','')}</div>"
+                    html = f"<div style='font-size:12px; border:1px solid #555; padding:8px; border-radius:5px; margin-bottom:8px; background-color: #1e1e1e;'>"
+                    html += f"<div style='color:#ff4b4b; font-weight:bold; border-bottom:1px solid #444; margin-bottom:5px; padding-bottom:3px;'>📅 {item.get('openTime','')}</div>"
                     
                     for label, (start, end) in zip(labels, ranges):
                         if start < len(prizes_flat):
                             vals = prizes_flat[start:end]
                             vals_str = " - ".join([v.strip() for v in vals if v.strip()])
-                            html += f"<div style='display:flex; justify-content:space-between;'><span><b>{label}:</b></span> <span style='color:#333'>{vals_str}</span></div>"
+                            html += f"<div style='display:flex; justify-content:space-between; margin-bottom:2px;'><span style='color:#aaa'><b>{label}:</b></span> <span style='color:#ffffff; font-family: monospace;'>{vals_str}</span></div>"
                     html += "</div>"
                     return html
 
