@@ -162,7 +162,6 @@ def htable(headers, rows, col_css=None, fs=13):
     TH = (f"background:#2c3e50;color:#fff;padding:8px 12px;"
           f"font-size:{fs}px;white-space:nowrap;border:1px solid #1a252f;")
     def td_s(ci, ri):
-        # Màu nền xen kẽ
         bg = "#f5f7fa" if ri % 2 else "#ffffff"
         base = (f"padding:7px 11px;font-size:{fs}px;border:1px solid #e8ecf0;"
                 f"white-space:nowrap;background:{bg};color:#2c3e50")
@@ -172,9 +171,14 @@ def htable(headers, rows, col_css=None, fs=13):
     ths = "".join(f'<th style="{TH}">{h}</th>' for h in headers)
     trs = ""
     for ri, row in enumerate(rows):
-        tds = "".join(f'<td style="{td_s(ci,ri)}">{c if c is not None else ""}</td>'
-                      for ci, c in enumerate(row))
-        trs += f'<tr>{tds}</tr>'
+        cells = []
+        for ci, c in enumerate(row):
+            raw = str(c) if c is not None else ""
+            # Strip HTML tags để làm title tooltip
+            import re as _re
+            plain = _re.sub(r'<[^>]+>', '', raw)
+            cells.append(f'<td style="{td_s(ci,ri)}" title="{plain}">{raw}</td>')
+        trs += f'<tr>{"".join(cells)}</tr>'
     return (f'<div style="overflow:auto;max-height:640px;border-radius:8px;'
             f'box-shadow:0 2px 8px rgba(0,0,0,.12);margin:6px 0">'
             f'<table style="border-collapse:collapse;width:100%;background:#fff">'
@@ -244,33 +248,55 @@ def panel_ket_qua(raw, show_g47):
     max_dau  = max(cnt_dau.values(),  default=1)
     max_duoi = max(cnt_duoi.values(), default=1)
 
-    # Bảng Đầu/Đuôi 10 hàng
-    dt_rows = ""
-    for i in range(10):
+    # Bảng Đầu — sort theo tần suất cao→thấp
+    dau_sorted  = sorted(range(10), key=lambda i: -cnt_dau.get(str(i), 0))
+    duoi_sorted = sorted(range(10), key=lambda i: -cnt_duoi.get(str(i), 0))
+
+    def td_cell(val, style=""): return f'<td style="padding:4px 8px;border:1px solid #ecf0f1;{style}">{val}</td>'
+
+    # Bảng Đầu
+    rows_dau = ""
+    for i in dau_sorted:
         d = str(i)
         cnt_d = cnt_dau.get(d, 0)
-        cnt_t = cnt_duoi.get(d, 0)
         duoi_ra = ",".join(sorted(h2t.get(d, [])))
-        dau_ra  = ",".join(sorted(t2h.get(d, [])))
-        # màu hàng nếu nhiều
-        bg = "#fff3e0" if cnt_d >= 3 else ("#e8f5e9" if cnt_t >= 3 else "")
-        bg_style = f"background:{bg};" if bg else ""
-        dt_rows += (
-            f'<tr style="{bg_style}">'
-            f'<td style="text-align:center;font-weight:700;color:#c0392b;'
-            f'font-family:Consolas;padding:3px 6px;border:1px solid #ecf0f1">{d}</td>'
-            f'<td style="font-weight:700;color:{"#c0392b" if cnt_d>=3 else "#555"};'
-            f'text-align:center;padding:3px 6px;border:1px solid #ecf0f1">{cnt_d}</td>'
-            f'<td style="color:#2471a3;font-family:Consolas;padding:3px 8px;'
-            f'border:1px solid #ecf0f1">{duoi_ra}</td>'
-            f'<td style="width:8px;border:none"></td>'
-            f'<td style="text-align:center;font-weight:700;color:#c0392b;'
-            f'font-family:Consolas;padding:3px 6px;border:1px solid #ecf0f1">{d}</td>'
-            f'<td style="font-weight:700;color:{"#1e8449" if cnt_t>=3 else "#555"};'
-            f'text-align:center;padding:3px 6px;border:1px solid #ecf0f1">{cnt_t}</td>'
-            f'<td style="color:#2471a3;font-family:Consolas;padding:3px 8px;'
-            f'border:1px solid #ecf0f1">{dau_ra}</td>'
-            f'</tr>')
+        hot = cnt_d >= 3
+        bg = "background:#fff3e0;" if hot else ""
+        bar_w = int(cnt_d / max_dau * 60) if max_dau else 0
+        bar = (f'<div style="display:inline-block;width:{bar_w}px;height:10px;'
+               f'background:{"#c0392b" if hot else "#bdc3c7"};border-radius:2px;margin-right:4px;vertical-align:middle"></div>')
+        rows_dau += (
+            f'<tr style="{bg}">'
+            + td_cell(d, "text-align:center;font-weight:700;color:#c0392b;font-family:Consolas;font-size:14px")
+            + td_cell(f'{bar}<b style="color:{"#c0392b" if hot else "#555"}">{cnt_d}</b>', "white-space:nowrap")
+            + td_cell(duoi_ra, "color:#1a5276;font-family:Consolas;font-size:12px")
+            + '</tr>')
+
+    # Bảng Đuôi
+    rows_duoi = ""
+    for i in duoi_sorted:
+        d = str(i)
+        cnt_t = cnt_duoi.get(d, 0)
+        dau_ra = ",".join(sorted(t2h.get(d, [])))
+        hot = cnt_t >= 3
+        bg = "background:#e8f5e9;" if hot else ""
+        bar_w = int(cnt_t / max_duoi * 60) if max_duoi else 0
+        bar = (f'<div style="display:inline-block;width:{bar_w}px;height:10px;'
+               f'background:{"#1e8449" if hot else "#bdc3c7"};border-radius:2px;margin-right:4px;vertical-align:middle"></div>')
+        rows_duoi += (
+            f'<tr style="{bg}">'
+            + td_cell(d, "text-align:center;font-weight:700;color:#1e8449;font-family:Consolas;font-size:14px")
+            + td_cell(f'{bar}<b style="color:{"#1e8449" if hot else "#555"}">{cnt_t}</b>', "white-space:nowrap")
+            + td_cell(dau_ra, "color:#1a5276;font-family:Consolas;font-size:12px")
+            + '</tr>')
+
+    th_s = "background:#2c3e50;color:#fff;padding:5px 8px;text-align:center;font-size:12px"
+    tbl_dau  = (f'<table style="border-collapse:collapse;width:100%;font-size:13px">'
+                f'<tr><th style="{th_s}">Đầu</th><th style="{th_s}">SL ▼</th>'
+                f'<th style="{th_s}">Đuôi ra</th></tr>{rows_dau}</table>')
+    tbl_duoi = (f'<table style="border-collapse:collapse;width:100%;font-size:13px">'
+                f'<tr><th style="{th_s}">Đuôi</th><th style="{th_s}">SL ▼</th>'
+                f'<th style="{th_s}">Đầu ra</th></tr>{rows_duoi}</table>')
 
     dau_nhieu  = sorted([d for d,c in cnt_dau.items()  if c >= 3], key=lambda x: -cnt_dau[x])
     duoi_nhieu = sorted([d for d,c in cnt_duoi.items() if c >= 3], key=lambda x: -cnt_duoi[x])
@@ -314,19 +340,11 @@ def panel_ket_qua(raw, show_g47):
             f'<div style="font-size:11px;font-weight:700;color:#1e8449;margin-bottom:4px">🟢 ĐUÔI NHIỀU (≥3)</div>'
             f'{duoi_badges}</div>'
             f'</div>'
-            # Bảng đầu/đuôi
-            f'<table style="border-collapse:collapse;width:100%;font-size:12px">'
-            f'<tr>'
-            f'<th style="background:#34495e;color:#fff;padding:4px 6px;text-align:center">Đầu</th>'
-            f'<th style="background:#34495e;color:#fff;padding:4px 6px;text-align:center">SL</th>'
-            f'<th style="background:#34495e;color:#fff;padding:4px 6px">Đuôi ra</th>'
-            f'<th style="width:8px;background:transparent"></th>'
-            f'<th style="background:#34495e;color:#fff;padding:4px 6px;text-align:center">Đuôi</th>'
-            f'<th style="background:#34495e;color:#fff;padding:4px 6px;text-align:center">SL</th>'
-            f'<th style="background:#34495e;color:#fff;padding:4px 6px">Đầu ra</th>'
-            f'</tr>'
-            f'{dt_rows}'
-            f'</table></div>',
+            # Bảng đầu/đuôi — 2 cột song song
+            f'<div style="display:flex;gap:10px">'
+            f'<div style="flex:1">{tbl_dau}</div>'
+            f'<div style="flex:1">{tbl_duoi}</div>'
+            f'</div></div>',
             unsafe_allow_html=True)
 
 # ═══════════════════════════ TAB THIẾU ĐẦU ═══════════════════════════
@@ -366,7 +384,7 @@ def tab_thieu_dau(raw):
         0: "color:#c0392b;font-weight:700;text-align:center",
         1: "color:#7f8c8d;text-align:center",
     }
-    for k in range(2, 9): ccs_k[k] = "background:#ecfdf5;color:#065f46;font-size:12px;font-family:Consolas"
+    for k in range(2, 9): ccs_k[k] = "background:#ecfdf5;color:#065f46;font-size:12px;font-family:Consolas;max-width:30px;overflow:hidden;text-overflow:ellipsis;cursor:pointer"
 
     rows_main, rows_k = [], []
     for i, curr in enumerate(proc):
@@ -428,7 +446,7 @@ def tab_list0(raw):
         0: "color:#c0392b;font-weight:700;text-align:center",
         1: "color:#7f8c8d;text-align:center",
     }
-    for k in range(2,9): ccs_k[k] = "background:#ecfdf5;color:#065f46;font-size:12px;font-family:Consolas"
+    for k in range(2,9): ccs_k[k] = "background:#ecfdf5;color:#065f46;font-size:12px;font-family:Consolas;max-width:30px;overflow:hidden;text-overflow:ellipsis;cursor:pointer"
 
     rows_main, rows_k = [], []
     for i, curr in enumerate(proc):
@@ -515,7 +533,7 @@ def tab_lo_la(raw, region):
         0: "color:#c0392b;font-weight:700;text-align:center",
         1: "color:#7f8c8d;text-align:center",
     }
-    for k in range(2,12): ccs_k[k] = "background:#ecfdf5;color:#065f46;font-size:12px;font-family:Consolas"
+    for k in range(2,12): ccs_k[k] = "background:#ecfdf5;color:#065f46;font-size:12px;font-family:Consolas;max-width:30px;overflow:hidden;text-overflow:ellipsis;cursor:pointer"
 
     rows_main, rows_k = [], []
     for i, curr in enumerate(proc):
