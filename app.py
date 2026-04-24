@@ -878,16 +878,18 @@ def tab_anh_xa(raw):
             f'</div></div>')
         st.markdown(kq_html, unsafe_allow_html=True)
 
-    # Bảng tóm tắt
-    headers_sum = ["Kỳ","Ngày","GĐB","CS GĐB","Top5 GĐB"]
+    # Bảng tóm tắt: bỏ Đầu nhiều/Đuôi nhiều, giữ Top5 ánh xạ
+    headers_sum = ["Kỳ","Ngày","GĐB","CS GĐB","Top5 GĐB","Top5 Đầu (ánh xạ)","Top5 Đuôi (ánh xạ)"]
     ccs_sum = {
         0: "color:#dc2626;font-weight:700;text-align:center",
         1: "color:#6b7280;text-align:center",
         2: "background:#fff7ed;color:#c0392b;font-weight:700;font-family:Consolas;font-size:16px;text-align:center",
         3: "background:#fff7ed;color:#d97706;font-weight:700;text-align:center",
         4: "background:#f0fdf4;color:#166534;font-weight:700",
+        5: "background:#fff7ed;color:#059669;font-weight:700",
+        6: "background:#f5f3ff;color:#059669;font-weight:700",
     }
-    rows_sum = [[r[0],r[1],r[2],r[3],r[4]] for r in rows]
+    rows_sum = [[r[0],r[1],r[2],r[3],r[4],r[7],r[9]] for r in rows]
     st.markdown(htable(headers_sum, rows_sum, ccs_sum), unsafe_allow_html=True)
 
     # Chi tiết đầy đủ
