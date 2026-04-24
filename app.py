@@ -687,6 +687,159 @@ def tab_debug(raw):
     st.write("**get_list0():**", get_list0(p))
     st.write("**miss_heads():**", miss_heads(p))
 
+# ═══════════════════════════ ÁNH XẠ GĐB ═══════════════════════════
+
+def _get_top_heads_tails(item, top_n=2):
+    """Top đầu/đuôi xuất hiện nhiều nhất (≥4 lô). Nếu không đủ lấy top 1."""
+    prizes = get_prizes(item)
+    heads, tails = [], []
+    for p in prizes:
+        if len(p) >= 2 and p[-2:].isdigit():
+            heads.append(p[-2])
+            tails.append(p[-1])
+    def top_ties(lst, n, min_c=4):
+        if not lst: return []
+        cnt = Counter(lst)
+        qualified = sorted([(d,c) for d,c in cnt.items() if c>=min_c], key=lambda x:(-x[1],x[0]))
+        if not qualified:
+            best = max(cnt.items(), key=lambda x:(-x[1],x[0]))
+            return [best[0]]
+        if len(qualified) <= n: return [d for d,_ in qualified]
+        threshold = qualified[n-1][1]
+        return [d for d,c in qualified if c>=threshold]
+    return top_ties(heads, top_n), top_ties(tails, top_n)
+
+def _position_map(curr_detail, prev_detail, target_digits):
+    """
+    Thuật toán ánh xạ vị trí:
+    1. Tìm vị trí (g,n,c) trong prev_detail có chữ số ∈ target_digits
+    2. Ánh xạ sang curr_detail cùng vị trí → thu thập chữ số
+    3. Tần suất → top 5
+    """
+    if not target_digits: return [], {}
+    matched = []
+    for g_idx, field in enumerate(prev_detail):
+        nums = [x.strip() for x in field.split(",")]
+        for n_idx, num in enumerate(nums):
+            for c_idx, ch in enumerate(num):
+                if ch in target_digits:
+                    matched.append((g_idx, n_idx, c_idx))
+    collected = []
+    for g_idx, n_idx, c_idx in matched:
+        if g_idx < len(curr_detail):
+            curr_nums = [x.strip() for x in curr_detail[g_idx].split(",")]
+            if n_idx < len(curr_nums):
+                num = curr_nums[n_idx]
+                if c_idx < len(num) and num[c_idx].isdigit():
+                    collected.append(num[c_idx])
+    freq = Counter(collected)
+    top5 = [d for d,_ in freq.most_common(5)]
+    return top5, dict(freq)
+
+def compute_anh_xa(curr_item, prev_item):
+    """Tính ánh xạ GĐB + Đầu/Đuôi nhiều."""
+    curr_d = parse_detail(curr_item)
+    prev_d = parse_detail(prev_item)
+    if not curr_d or not prev_d:
+        return None
+
+    # GĐB
+    gdb = curr_d[0].split(",")[0].strip()
+    gdb_digits = set(c for c in gdb if c.isdigit())
+    top5_gdb, freq_gdb = _position_map(curr_d, prev_d, gdb_digits)
+
+    # Đầu/Đuôi nhiều
+    top_heads, top_tails = _get_top_heads_tails(curr_item)
+    top5_head, freq_head = _position_map(curr_d, prev_d, set(top_heads))
+    top5_tail, freq_tail = _position_map(curr_d, prev_d, set(top_tails))
+
+    return {
+        "gdb": gdb,
+        "gdb_digits": "".join(sorted(gdb_digits)),
+        "top5_gdb":  top5_gdb,
+        "freq_gdb":  freq_gdb,
+        "top_heads": top_heads,
+        "top_tails": top_tails,
+        "top5_head": top5_head,
+        "freq_head": freq_head,
+        "top5_tail": top5_tail,
+        "freq_tail": freq_tail,
+    }
+
+def tab_anh_xa(raw):
+    if not raw or len(raw) < 2:
+        st.info("👆 Cần ít nhất 2 kỳ dữ liệu")
+        return
+
+    st.markdown("""
+    **Thuật toán Ánh Xạ Vị Trí:**  
+    Lấy chữ số GĐB (hoặc Đầu/Đuôi nhiều) kỳ hiện tại → tìm vị trí chứa chữ số đó trong kỳ trước → ánh xạ sang kỳ hiện tại → đếm tần suất → Top 5.
+    """)
+
+    n = min(15, len(raw) - 1)
+    rows = []
+    for i in range(n):
+        curr, prev = raw[i], raw[i+1]
+        r = compute_anh_xa(curr, prev)
+        if not r: continue
+
+        def fmt_top(top5, freq):
+            return "  ".join(f'<b style="color:#c0392b">{d}</b>({freq.get(d,0)})' for d in top5) or "—"
+
+        def fmt_freq(freq):
+            s = sorted(freq.items(), key=lambda x:(-x[1],x[0]))
+            return "  ".join(f"{d}:{c}" for d,c in s) if s else "—"
+
+        rows.append([
+            f'<b style="color:#c0392b">{ky(curr)}</b>',
+            ngay(curr),
+            f'<b style="font-family:Consolas;font-size:15px">{r["gdb"]}</b>',
+            r["gdb_digits"],
+            fmt_top(r["top5_gdb"],  r["freq_gdb"]),
+            fmt_freq(r["freq_gdb"]),
+            f'<span style="color:#e67e22;font-weight:700">{",".join(r["top_heads"])}</span>',
+            fmt_top(r["top5_head"], r["freq_head"]),
+            f'<span style="color:#1e8449;font-weight:700">{",".join(r["top_tails"])}</span>',
+            fmt_top(r["top5_tail"], r["freq_tail"]),
+        ])
+
+    headers = [
+        "Kỳ", "Ngày",
+        "GĐB", "CS GĐB",
+        "Top5 GĐB (freq)", "Toàn bộ GĐB",
+        "Đầu nhiều", "Top5 Đầu",
+        "Đuôi nhiều", "Top5 Đuôi",
+    ]
+    ccs = {
+        0: "text-align:center",
+        1: "color:#7f8c8d;text-align:center",
+        2: "background:#fff3e0;text-align:center;font-size:16px",
+        3: "background:#fff3e0;text-align:center;font-weight:700;color:#e67e22",
+        4: "background:#fef9e7;font-size:13px",
+        5: "color:#7f8c8d;font-size:11px",
+        6: "background:#fff3e0;text-align:center",
+        7: "background:#fff8e1;font-size:13px",
+        8: "background:#e8f5e9;text-align:center",
+        9: "background:#e8f8f5;font-size:13px",
+    }
+
+    # Highlight row 0 (kỳ mới nhất)
+    if rows:
+        r0 = rows[0]
+        kq_html = (
+            f'<div style="background:#e3f2fd;border:2px solid #2471a3;border-radius:8px;'
+            f'padding:10px;margin-bottom:10px;font-size:14px">'
+            f'<b style="color:#2471a3;font-size:15px">🔮 Kỳ mới nhất — Dự đoán từ ánh xạ:</b><br>'
+            f'&nbsp;&nbsp;GĐB <b style="color:#c0392b;font-family:Consolas;font-size:16px">{rows[0][2]}</b>'
+            f' &nbsp;·&nbsp; CS: <b>{rows[0][3]}</b>'
+            f' &nbsp;·&nbsp; Top5 GĐB: {rows[0][4]}'
+            f'<br>&nbsp;&nbsp;Top Đầu: {rows[0][6]} → ánh xạ: {rows[0][7]}'
+            f' &nbsp;·&nbsp; Top Đuôi: {rows[0][8]} → ánh xạ: {rows[0][9]}'
+            f'</div>')
+        st.markdown(kq_html, unsafe_allow_html=True)
+
+    st.markdown(htable(headers, rows, ccs), unsafe_allow_html=True)
+
 # ═══════════════════════════ MAIN ═══════════════════════════
 def main():
     st.set_page_config(
@@ -774,12 +927,13 @@ def main():
         st.divider()
 
     # ── TABS ──
-    t1, t2, t3, t4, t5, t6 = st.tabs([
+    t1, t2, t3, t4, t5, t6, t7 = st.tabs([
         "📉 Thiếu Đầu & Chạm Tổng",
         "📋 Cầu List 0",
         "🔮 Lô Lạ",
         "🔢 Lô Xiên",
         "🎲 Tài / Xỉu",
+        "🗺️ Ánh Xạ GĐB",
         "🔧 Debug API",
     ])
     with t1: tab_thieu_dau(raw)
@@ -787,7 +941,8 @@ def main():
     with t3: tab_lo_la(raw, region)
     with t4: tab_lo_xien(raw)
     with t5: tab_tai_xiu(raw)
-    with t6: tab_debug(raw)
+    with t6: tab_anh_xa(raw)
+    with t7: tab_debug(raw)
 
 if __name__ == "__main__":
     main()
