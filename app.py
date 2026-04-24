@@ -187,13 +187,13 @@ def htable(headers, rows, col_css=None, fs=13):
 
 # ═══════════════════════════ KẾT QUẢ PANEL ═══════════════════════════
 def panel_ket_qua(raw, show_g47):
-    """Hiển thị kết quả xổ số + thống kê Đầu/Đuôi nhiều + GĐB nhiều."""
     if not raw: return
-    item = raw[0]
+    item   = raw[0]
     detail = parse_detail(item)
 
     # ── Kết quả giải ──
-    html_prizes = ""
+    html = (f'<div style="font-weight:700;color:#c0392b;font-size:13px;margin-bottom:6px">'
+            f'🎯 {ky(item)} &nbsp;<span style="color:#888;font-weight:400;font-size:11px">{ngay(item)}</span></div>')
     idx = 0
     for label, color, cnt in PRIZE_CONF:
         if not show_g47 and label in ("G4","G5","G6","G7"):
@@ -202,150 +202,66 @@ def panel_ket_qua(raw, show_g47):
         for _ in range(cnt):
             if idx < len(detail): vals.append(detail[idx].strip()); idx += 1
         if not any(vals): continue
-        nums_html = "&nbsp;&nbsp;".join(
-            f'<b style="font-size:15px;font-family:Consolas;letter-spacing:2px;color:#1a1a2e">{v}</b>'
-            for v in vals if v)
-        html_prizes += (
-            f'<div style="display:flex;align-items:center;gap:8px;'
-            f'padding:4px 0;border-bottom:1px solid #f0f0f0">'
-            f'<span style="background:{color};color:#fff;border-radius:4px;'
-            f'padding:2px 8px;font-size:11px;font-weight:700;min-width:32px;'
-            f'text-align:center;flex-shrink:0">{label}</span>'
-            f'{nums_html}</div>')
+        nums = "&nbsp;".join(f'<b style="font-family:Consolas;font-size:14px;color:#1a1a2e">{v}</b>' for v in vals if v)
+        html += (f'<div style="display:flex;align-items:center;gap:6px;padding:2px 0;border-bottom:1px solid #f0f0f0">'
+                 f'<span style="background:{color};color:#fff;border-radius:3px;padding:1px 5px;'
+                 f'font-size:10px;font-weight:700;min-width:26px;text-align:center;flex-shrink:0">{label}</span>'
+                 f'{nums}</div>')
+    st.markdown(f'<div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:10px;margin-bottom:8px">{html}</div>',
+                unsafe_allow_html=True)
 
-    # ── Thống kê đầu/đuôi từ NHIỀU kỳ ──
-    prizes_all = get_prizes(item)
-    nums2d = get_2d(prizes_all)
+    # ── GĐB 5 kỳ ──
+    gdbs = [get_prizes(it)[0].strip() for it in raw[:5] if get_prizes(it)]
+    gdb_html = " &nbsp; ".join(f'<b style="font-family:Consolas;font-size:14px;color:#fff">{g}</b>' for g in gdbs)
+    st.markdown(f'<div style="background:#2c3e50;border-radius:6px;padding:7px 10px;margin-bottom:8px">'
+                f'<span style="color:#95a5a6;font-size:10px">GĐB 5 kỳ:&nbsp;</span>{gdb_html}</div>',
+                unsafe_allow_html=True)
 
-    # Đầu nhiều / Đuôi nhiều (kỳ hiện tại)
+    # ── Bảng Đầu/Đuôi ──
+    prizes = get_prizes(item)
+    nums2d = get_2d(prizes)
     cnt_dau  = Counter(n[0] for n in nums2d)
     cnt_duoi = Counter(n[1] for n in nums2d)
-
-    # GĐB nhiều (5 kỳ gần nhất)
-    gdb_digits = []
-    for it in raw[:5]:
-        p = get_prizes(it)
-        if p: gdb_digits.append(p[0].strip())
-
-    # Đầu ra / Đuôi ra (từ các lô 2 số)
-    h2t = {str(i): [] for i in range(10)}
-    t2h = {str(i): [] for i in range(10)}
-    for n in nums2d:
-        h2t[n[0]].append(n[1])
-        t2h[n[1]].append(n[0])
-
-    def badge(digit, count, max_count):
-        """Tạo badge màu theo tần suất."""
-        ratio = count / max_count if max_count else 0
-        if ratio >= 0.8:   bg, fg = "#c0392b", "#fff"
-        elif ratio >= 0.5: bg, fg = "#e67e22", "#fff"
-        elif ratio >= 0.3: bg, fg = "#f39c12", "#000"
-        else:              bg, fg = "#ecf0f1", "#555"
-        return (f'<span style="background:{bg};color:{fg};border-radius:4px;'
-                f'padding:1px 6px;font-size:12px;font-weight:700;margin:1px;'
-                f'display:inline-block">{digit}({count})</span>')
-
     max_dau  = max(cnt_dau.values(),  default=1)
     max_duoi = max(cnt_duoi.values(), default=1)
+    h2t = {str(i):[] for i in range(10)}
+    t2h = {str(i):[] for i in range(10)}
+    for n in nums2d:
+        h2t[n[0]].append(n[1]); t2h[n[1]].append(n[0])
 
-    # Bảng Đầu — sort theo tần suất cao→thấp
-    dau_sorted  = sorted(range(10), key=lambda i: -cnt_dau.get(str(i), 0))
-    duoi_sorted = sorted(range(10), key=lambda i: -cnt_duoi.get(str(i), 0))
+    dau_sorted  = sorted(range(10), key=lambda i: -cnt_dau.get(str(i),0))
+    duoi_sorted = sorted(range(10), key=lambda i: -cnt_duoi.get(str(i),0))
 
-    def td_cell(val, style=""): return f'<td style="padding:4px 8px;border:1px solid #ecf0f1;{style}">{val}</td>'
+    def mk_bar(cnt, max_c, color):
+        w = int(cnt/max_c*40) if max_c else 0
+        return (f'<div style="display:inline-block;width:{w}px;height:8px;'
+                f'background:{color};border-radius:2px;margin-right:3px;vertical-align:middle"></div>')
 
-    # Bảng Đầu
-    rows_dau = ""
+    TH = "background:#2c3e50;color:#fff;padding:3px 6px;font-size:11px;text-align:center"
+    TD = "padding:3px 6px;border:1px solid #eee;font-size:12px"
+
+    rows_d, rows_t = "", ""
     for i in dau_sorted:
-        d = str(i)
-        cnt_d = cnt_dau.get(d, 0)
-        duoi_ra = ",".join(sorted(h2t.get(d, [])))
-        hot = cnt_d >= 3
+        d = str(i); c = cnt_dau.get(d,0); hot = c>=3
         bg = "background:#fff3e0;" if hot else ""
-        bar_w = int(cnt_d / max_dau * 60) if max_dau else 0
-        bar = (f'<div style="display:inline-block;width:{bar_w}px;height:10px;'
-               f'background:{"#c0392b" if hot else "#bdc3c7"};border-radius:2px;margin-right:4px;vertical-align:middle"></div>')
-        rows_dau += (
-            f'<tr style="{bg}">'
-            + td_cell(d, "text-align:center;font-weight:700;color:#c0392b;font-family:Consolas;font-size:14px")
-            + td_cell(f'{bar}<b style="color:{"#c0392b" if hot else "#555"}">{cnt_d}</b>', "white-space:nowrap")
-            + td_cell(duoi_ra, "color:#1a5276;font-family:Consolas;font-size:12px")
-            + '</tr>')
-
-    # Bảng Đuôi
-    rows_duoi = ""
+        rows_d += (f'<tr style="{bg}"><td style="{TD};font-weight:700;color:#c0392b;text-align:center;font-family:Consolas">{d}</td>'
+                   f'<td style="{TD};white-space:nowrap">{mk_bar(c,max_dau,"#c0392b")}<b style="color:{"#c0392b" if hot else "#555"}">{c}</b></td>'
+                   f'<td style="{TD};color:#1a5276;font-family:Consolas;font-size:11px">{",".join(sorted(h2t[d]))}</td></tr>')
     for i in duoi_sorted:
-        d = str(i)
-        cnt_t = cnt_duoi.get(d, 0)
-        dau_ra = ",".join(sorted(t2h.get(d, [])))
-        hot = cnt_t >= 3
+        d = str(i); c = cnt_duoi.get(d,0); hot = c>=3
         bg = "background:#e8f5e9;" if hot else ""
-        bar_w = int(cnt_t / max_duoi * 60) if max_duoi else 0
-        bar = (f'<div style="display:inline-block;width:{bar_w}px;height:10px;'
-               f'background:{"#1e8449" if hot else "#bdc3c7"};border-radius:2px;margin-right:4px;vertical-align:middle"></div>')
-        rows_duoi += (
-            f'<tr style="{bg}">'
-            + td_cell(d, "text-align:center;font-weight:700;color:#1e8449;font-family:Consolas;font-size:14px")
-            + td_cell(f'{bar}<b style="color:{"#1e8449" if hot else "#555"}">{cnt_t}</b>', "white-space:nowrap")
-            + td_cell(dau_ra, "color:#1a5276;font-family:Consolas;font-size:12px")
-            + '</tr>')
+        rows_t += (f'<tr style="{bg}"><td style="{TD};font-weight:700;color:#1e8449;text-align:center;font-family:Consolas">{d}</td>'
+                   f'<td style="{TD};white-space:nowrap">{mk_bar(c,max_duoi,"#1e8449")}<b style="color:{"#1e8449" if hot else "#555"}">{c}</b></td>'
+                   f'<td style="{TD};color:#1a5276;font-family:Consolas;font-size:11px">{",".join(sorted(t2h[d]))}</td></tr>')
 
-    th_s = "background:#2c3e50;color:#fff;padding:5px 8px;text-align:center;font-size:12px"
-    tbl_dau  = (f'<table style="border-collapse:collapse;width:100%;font-size:13px">'
-                f'<tr><th style="{th_s}">Đầu</th><th style="{th_s}">SL ▼</th>'
-                f'<th style="{th_s}">Đuôi ra</th></tr>{rows_dau}</table>')
-    tbl_duoi = (f'<table style="border-collapse:collapse;width:100%;font-size:13px">'
-                f'<tr><th style="{th_s}">Đuôi</th><th style="{th_s}">SL ▼</th>'
-                f'<th style="{th_s}">Đầu ra</th></tr>{rows_duoi}</table>')
-
-    dau_nhieu  = sorted([d for d,c in cnt_dau.items()  if c >= 3], key=lambda x: -cnt_dau[x])
-    duoi_nhieu = sorted([d for d,c in cnt_duoi.items() if c >= 3], key=lambda x: -cnt_duoi[x])
-    dau_badges  = "".join(badge(d, cnt_dau[d],  max_dau)  for d in dau_nhieu)  or '<span style="color:#aaa">—</span>'
-    duoi_badges = "".join(badge(d, cnt_duoi[d], max_duoi) for d in duoi_nhieu) or '<span style="color:#aaa">—</span>'
-
-    # GĐB 5 kỳ
-    gdb_html = "".join(
-        f'<span style="background:#34495e;color:#fff;border-radius:4px;'
-        f'padding:2px 8px;margin:2px;font-family:Consolas;font-weight:700;'
-        f'font-size:14px">{g}</span>'
-        for g in gdb_digits)
-
-    col1, col2 = st.columns([2, 3])
-    with col1:
-        st.markdown(
-            f'<div style="background:#fff;border:2px solid #dee2e6;border-radius:10px;'
-            f'padding:12px;font-family:Consolas">'
-            f'<div style="color:#c0392b;font-weight:700;font-size:14px;margin-bottom:8px">'
-            f'🎯 KỲ {ky(item)} &nbsp;·&nbsp;'
-            f'<span style="color:#7f8c8d;font-size:12px">{ngay(item)}</span></div>'
-            f'{html_prizes}</div>',
-            unsafe_allow_html=True)
-
-        # GĐB 5 kỳ gần nhất
-        st.markdown(
-            f'<div style="background:#2c3e50;border-radius:8px;padding:10px;margin-top:8px">'
-            f'<div style="color:#95a5a6;font-size:11px;margin-bottom:6px">🎰 GĐB 5 KỲ GẦN NHẤT</div>'
-            f'{gdb_html}</div>',
-            unsafe_allow_html=True)
-
-    with col2:
-        st.markdown(
-            f'<div style="background:#fff;border:2px solid #dee2e6;border-radius:10px;padding:10px">'
-            # Đầu nhiều / Đuôi nhiều banner
-            f'<div style="display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap">'
-            f'<div style="flex:1;background:#fff3e0;border-radius:6px;padding:6px 10px">'
-            f'<div style="font-size:11px;font-weight:700;color:#e67e22;margin-bottom:4px">🔴 ĐẦU NHIỀU (≥3)</div>'
-            f'{dau_badges}</div>'
-            f'<div style="flex:1;background:#e8f5e9;border-radius:6px;padding:6px 10px">'
-            f'<div style="font-size:11px;font-weight:700;color:#1e8449;margin-bottom:4px">🟢 ĐUÔI NHIỀU (≥3)</div>'
-            f'{duoi_badges}</div>'
-            f'</div>'
-            # Bảng đầu/đuôi — 2 cột song song
-            f'<div style="display:flex;gap:10px">'
-            f'<div style="flex:1">{tbl_dau}</div>'
-            f'<div style="flex:1">{tbl_duoi}</div>'
-            f'</div></div>',
-            unsafe_allow_html=True)
+    tbl = (f'<div style="display:flex;gap:8px">'
+           f'<div style="flex:1"><table style="border-collapse:collapse;width:100%">'
+           f'<tr><th style="{TH}">Đầu</th><th style="{TH}">SL▼</th><th style="{TH}">Đuôi ra</th></tr>{rows_d}</table></div>'
+           f'<div style="flex:1"><table style="border-collapse:collapse;width:100%">'
+           f'<tr><th style="{TH}">Đuôi</th><th style="{TH}">SL▼</th><th style="{TH}">Đầu ra</th></tr>{rows_t}</table></div>'
+           f'</div>')
+    st.markdown(f'<div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:8px">{tbl}</div>',
+                unsafe_allow_html=True)
 
 # ═══════════════════════════ TAB THIẾU ĐẦU ═══════════════════════════
 def tab_thieu_dau(raw):
@@ -908,71 +824,43 @@ def tab_anh_xa(raw):
 # ═══════════════════════════ MAIN ═══════════════════════════
 def main():
     st.set_page_config(
-        page_title="Phân Tích Xổ Số Pro",
-        page_icon="🎲",
-        layout="wide",
-        initial_sidebar_state="collapsed",
+        page_title="XỔ SỐ PRO", page_icon="🎲",
+        layout="wide", initial_sidebar_state="collapsed",
     )
-
-    # CSS tối giản — không override màu chữ
     st.markdown("""
     <style>
-    [data-testid="collapsedControl"] { display: none }
-    .block-container { padding: 0.5rem 1rem 1rem !important; max-width: 100% !important }
-    /* Tabs */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 3px; border-bottom: 3px solid #2c3e50; margin-bottom: 8px
-    }
-    .stTabs [data-baseweb="tab"] {
-        background: #ecf0f1; border-radius: 6px 6px 0 0;
-        font-weight: 700; font-size: 13px; padding: 8px 18px;
-        color: #2c3e50; border: 1px solid #bdc3c7
-    }
-    .stTabs [aria-selected="true"] {
-        background: #c0392b !important; color: #fff !important;
-        border-color: #c0392b
-    }
-    /* Buttons */
-    .stButton > button {
-        background: #2c3e50 !important; color: #fff !important;
-        font-weight: 700; border: none; border-radius: 6px;
-        padding: 8px 20px; font-size: 14px; width: 100%
-    }
-    .stButton > button:hover { background: #c0392b !important }
-    /* Selectbox & checkbox label rõ ràng */
-    label { font-size: 13px !important; color: #2c3e50 !important; font-weight: 600 !important }
-    .stSelectbox > label { font-size: 13px !important }
-    /* Divider */
-    hr { margin: 8px 0 !important }
+    [data-testid="collapsedControl"]{display:none}
+    .block-container{padding:0.4rem 0.8rem 1rem !important;max-width:100%!important}
+    /* Tab */
+    .stTabs [data-baseweb="tab-list"]{gap:2px;border-bottom:2px solid #c0392b;margin-bottom:6px}
+    .stTabs [data-baseweb="tab"]{
+        background:#f1f1f1;border-radius:4px 4px 0 0;
+        font-weight:700;font-size:13px;padding:6px 14px;color:#333}
+    .stTabs [aria-selected="true"]{background:#c0392b!important;color:#fff!important}
+    /* Button */
+    .stButton>button{
+        background:#c0392b!important;color:#fff!important;
+        font-weight:700;border:none;border-radius:5px;font-size:14px}
+    .stButton>button:hover{background:#a93226!important}
+    /* Label */
+    label{font-size:13px!important;color:#222!important;font-weight:600!important}
+    hr{margin:6px 0!important}
+    div[data-testid="stSuccessMessage"]{padding:6px 12px!important}
     </style>
     """, unsafe_allow_html=True)
 
-    # ── HEADER ──
-    today_str = datetime.now().strftime("%H:%M  %d/%m/%Y")
-    st.markdown(
-        f'<div style="background:#2c3e50;color:#fff;padding:10px 16px;'
-        f'border-radius:8px;margin-bottom:10px;display:flex;'
-        f'align-items:center;justify-content:space-between">'
-        f'<span style="font-size:20px;font-weight:800">🎲 PHÂN TÍCH XỔ SỐ PRO</span>'
-        f'<span style="font-size:12px;color:#95a5a6">{today_str}</span>'
-        f'</div>',
-        unsafe_allow_html=True)
-
     # ── CONTROL BAR ──
-    cc = st.columns([1.2, 0.9, 2, 0.9, 1.2])
-
-    region = cc[0].selectbox(
-        "Khu vực", ["Miền Bắc", "Miền Nam", "Miền Trung"], key="region")
-    today  = DAYS[datetime.now().weekday()]
-    day    = cc[1].selectbox("Thứ", DAYS, index=DAYS.index(today), key="day")
-    sl     = get_stations(region, day)
-    station = cc[2].selectbox("Đài xổ số", sl if sl else ["—"], key="station")
-    show_g47 = cc[3].checkbox("Hiện G4–G7", False, key="sg47")
-    load   = cc[4].button("📡 TẢI DỮ LIỆU")
-
+    c0,c1,c2,c3,c4,c5 = st.columns([1.1, 0.8, 1.8, 0.7, 0.7, 1.1])
+    region   = c0.selectbox("Khu vực",["Miền Bắc","Miền Nam","Miền Trung"],key="region")
+    today    = DAYS[datetime.now().weekday()]
+    day      = c1.selectbox("Thứ",DAYS,index=DAYS.index(today),key="day")
+    sl       = get_stations(region,day)
+    station  = c2.selectbox("Đài",sl if sl else ["—"],key="station")
+    show_g47 = c3.checkbox("G4-G7",False,key="sg47")
+    c4.write("")  # spacer align
+    load     = c5.button("📡 TẢI DỮ LIỆU",use_container_width=True)
     st.divider()
 
-    # ── STATE ──
     if "raw"  not in st.session_state: st.session_state.raw  = []
     if "name" not in st.session_state: st.session_state.name = ""
 
@@ -981,33 +869,29 @@ def main():
             data = load_raw(station)
         st.session_state.raw  = data
         st.session_state.name = station
-        if data: st.success(f"✅ Đã tải **{len(data)} kỳ** từ **{station}**")
-        else:    st.error("❌ Không tải được dữ liệu!")
+        if data: st.success(f"✅ {len(data)} kỳ — {station}")
+        else:    st.error("❌ Không tải được!")
 
     raw = st.session_state.raw
 
-    # ── KẾT QUẢ + THỐNG KÊ ──
+    # ── LAYOUT: trái kết quả | phải phân tích ──
     if raw:
-        panel_ket_qua(raw, show_g47)
-        st.divider()
-
-    # ── TABS ──
-    t1, t2, t3, t4, t5, t6, t7 = st.tabs([
-        "📉 Thiếu Đầu & Chạm Tổng",
-        "📋 Cầu List 0",
-        "🔮 Lô Lạ",
-        "🔢 Lô Xiên",
-        "🎲 Tài / Xỉu",
-        "🗺️ Ánh Xạ GĐB",
-        "🔧 Debug API",
-    ])
-    with t1: tab_thieu_dau(raw)
-    with t2: tab_list0(raw)
-    with t3: tab_lo_la(raw, region)
-    with t4: tab_lo_xien(raw)
-    with t5: tab_tai_xiu(raw)
-    with t6: tab_anh_xa(raw)
-    with t7: tab_debug(raw)
+        col_r, col_main = st.columns([1, 3])
+        with col_r:
+            panel_ket_qua(raw, show_g47)
+        with col_main:
+            t1,t2,t3,t4,t5,t6,t7 = st.tabs([
+                "Thiếu Đầu","Cầu List 0","Lô Lạ","Lô Xiên","Tài/Xỉu","Ánh Xạ GĐB","Debug",
+            ])
+            with t1: tab_thieu_dau(raw)
+            with t2: tab_list0(raw)
+            with t3: tab_lo_la(raw, region)
+            with t4: tab_lo_xien(raw)
+            with t5: tab_tai_xiu(raw)
+            with t6: tab_anh_xa(raw)
+            with t7: tab_debug(raw)
+    else:
+        st.info("👆 Chọn khu vực → thứ → đài rồi nhấn **TẢI DỮ LIỆU**")
 
 if __name__ == "__main__":
     main()
