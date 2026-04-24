@@ -325,9 +325,9 @@ def render_tab1(raw_data):
         return "background-color: #ffebee; color: #c0392b; font-weight: bold;"
 
     styled = df.style\
-        .applymap(highlight_ky, subset=["Kỳ"])\
-        .applymap(lambda v: "background-color: #fff8e1; color: #f57c00;", subset=["List 0"])\
-        .applymap(lambda v: "background-color: #e1f5fe; color: #0277bd;", subset=["Sót K0"])
+        .map(highlight_ky, subset=["Kỳ"])\
+        .map(lambda v: "background-color: #fff8e1; color: #f57c00;", subset=["List 0"])\
+        .map(lambda v: "background-color: #e1f5fe; color: #0277bd;", subset=["Sót K0"])
 
     st.dataframe(styled, use_container_width=True, height=600)
 
@@ -665,7 +665,7 @@ def render_tab_taixiu(raw_data):
             return "background-color: #e8f4fd; color: #1565c0; font-weight:bold;"
         return ""
 
-    styled = df.style.applymap(color_result, subset=["Kết quả"])
+    styled = df.style.map(color_result, subset=["Kết quả"])
     st.dataframe(styled, use_container_width=True)
 
 def _build_bead_road_html(seq):
