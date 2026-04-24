@@ -861,7 +861,7 @@ def tab_anh_xa(raw):
         "Đầu nhiều", "Top5 Đầu",
         "Đuôi nhiều", "Top5 Đuôi",
     ]
-    # Banner kỳ mới nhất
+    # Banner kỳ mới nhất — chỉ GĐB + Top5 ánh xạ
     if rows:
         kq_html = (
             f'<div style="background:#eff6ff;border:2px solid #3b82f6;border-radius:8px;'
@@ -870,30 +870,24 @@ def tab_anh_xa(raw):
             f'🔮 Kỳ mới nhất — Dự đoán từ ánh xạ</div>'
             f'<div style="display:flex;gap:20px;flex-wrap:wrap">'
             f'<div><span style="color:#6b7280;font-size:12px">GĐB</span><br>'
-            f'<b style="color:#c0392b;font-family:Consolas;font-size:20px">{rows[0][2]}</b></div>'
+            f'<b style="color:#c0392b;font-family:Consolas;font-size:22px">{rows[0][2]}</b></div>'
             f'<div><span style="color:#6b7280;font-size:12px">Chữ số GĐB</span><br>'
-            f'<b style="color:#d97706;font-size:16px">{rows[0][3]}</b></div>'
+            f'<b style="color:#d97706;font-size:18px">{rows[0][3]}</b></div>'
             f'<div><span style="color:#6b7280;font-size:12px">Top5 ánh xạ GĐB</span><br>'
-            f'<b style="font-size:15px">{rows[0][4]}</b></div>'
-            f'<div><span style="color:#6b7280;font-size:12px">Đầu nhiều → Top5</span><br>'
-            f'<b style="color:#ea580c">{rows[0][6]}</b> → <b style="color:#059669">{rows[0][7]}</b></div>'
-            f'<div><span style="color:#6b7280;font-size:12px">Đuôi nhiều → Top5</span><br>'
-            f'<b style="color:#7c3aed">{rows[0][8]}</b> → <b style="color:#059669">{rows[0][9]}</b></div>'
+            f'<b style="font-size:16px;color:#166534">{rows[0][4]}</b></div>'
             f'</div></div>')
         st.markdown(kq_html, unsafe_allow_html=True)
 
-    # Bảng tóm tắt (không có cột dài)
-    headers_sum = ["Kỳ","Ngày","GĐB","CS GĐB","Top5 GĐB","Đầu nhiều","Đuôi nhiều"]
+    # Bảng tóm tắt
+    headers_sum = ["Kỳ","Ngày","GĐB","CS GĐB","Top5 GĐB"]
     ccs_sum = {
         0: "color:#dc2626;font-weight:700;text-align:center",
         1: "color:#6b7280;text-align:center",
         2: "background:#fff7ed;color:#c0392b;font-weight:700;font-family:Consolas;font-size:16px;text-align:center",
         3: "background:#fff7ed;color:#d97706;font-weight:700;text-align:center",
         4: "background:#f0fdf4;color:#166534;font-weight:700",
-        5: "background:#fff7ed;color:#c2410c;font-weight:700;text-align:center",
-        6: "background:#f5f3ff;color:#6d28d9;font-weight:700;text-align:center",
     }
-    rows_sum = [[r[0],r[1],r[2],r[3],r[4],r[6],r[8]] for r in rows]
+    rows_sum = [[r[0],r[1],r[2],r[3],r[4]] for r in rows]
     st.markdown(htable(headers_sum, rows_sum, ccs_sum), unsafe_allow_html=True)
 
     # Chi tiết đầy đủ
