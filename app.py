@@ -1,955 +1,630 @@
 # -*- coding: utf-8 -*-
-"""
-Ứng dụng Phân Tích Xổ Số - Streamlit Version
-Chuyển đổi từ Tkinter sang Streamlit
-"""
+"""Phân Tích Xổ Số - Streamlit v3 (clean light theme)"""
 
 import streamlit as st
-import requests
-import json
-import itertools
+import requests, json, itertools
 from collections import Counter
 from datetime import datetime
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-# ─────────────────────────────────────────────
-# CẤU HÌNH & DỮ LIỆU
-# ─────────────────────────────────────────────
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0",
-    "Referer": "https://www.kqxs88.live/",
-}
-
+# ══════════════════════════════════════════════════
+# CONFIG & LỊCH
+# ══════════════════════════════════════════════════
+HEADERS = {"User-Agent": "Mozilla/5.0", "Referer": "https://www.kqxs88.live/"}
 _API_BASE = "https://www.kqxs88.live/api/front/open/lottery/history/list/game?limitNum=60&gameCode="
 _GAME_CODES = {
-    "Miền Bắc": "miba", "VN Miền Bắc 75s": "vnmbmg", "Miền Bắc 75s": "mbmg",
-    "An Giang": "angi", "Bạc Liêu": "bali", "Bến Tre": "betr",
-    "Bình Dương": "bidu", "Bình Thuận": "bith", "Bình Phước": "biph",
-    "Cà Mau": "cama", "Cần Thơ": "cath", "Đà Lạt": "dalat",
-    "Đồng Nai": "dona", "Đồng Tháp": "doth", "Hậu Giang": "hagi",
-    "Kiên Giang": "kigi", "Long An": "loan", "Sóc Trăng": "sotr",
-    "Tây Ninh": "tani", "Tiền Giang": "tigi", "TP. Hồ Chí Minh": "tphc",
-    "Trà Vinh": "trvi", "Vĩnh Long": "vilo", "Vũng Tàu": "vuta",
-    "Đà Nẵng": "dana", "Bình Định": "bidi", "Đắk Lắk": "dalak",
-    "Đắk Nông": "dano", "Gia Lai": "gila", "Khánh Hòa": "khho",
-    "Kon Tum": "kotu", "Ninh Thuận": "nith", "Phú Yên": "phye",
-    "Quảng Bình": "qubi", "Quảng Nam": "quna", "Quảng Ngãi": "qung",
-    "Quảng Trị": "qutr", "Thừa Thiên Huế": "thth",
+    "Miền Bắc":"miba","VN Miền Bắc 75s":"vnmbmg","Miền Bắc 75s":"mbmg",
+    "An Giang":"angi","Bạc Liêu":"bali","Bến Tre":"betr","Bình Dương":"bidu",
+    "Bình Thuận":"bith","Bình Phước":"biph","Cà Mau":"cama","Cần Thơ":"cath",
+    "Đà Lạt":"dalat","Đồng Nai":"dona","Đồng Tháp":"doth","Hậu Giang":"hagi",
+    "Kiên Giang":"kigi","Long An":"loan","Sóc Trăng":"sotr","Tây Ninh":"tani",
+    "Tiền Giang":"tigi","TP. Hồ Chí Minh":"tphc","Trà Vinh":"trvi",
+    "Vĩnh Long":"vilo","Vũng Tàu":"vuta","Đà Nẵng":"dana","Bình Định":"bidi",
+    "Đắk Lắk":"dalak","Đắk Nông":"dano","Gia Lai":"gila","Khánh Hòa":"khho",
+    "Kon Tum":"kotu","Ninh Thuận":"nith","Phú Yên":"phye","Quảng Bình":"qubi",
+    "Quảng Nam":"quna","Quảng Ngãi":"qung","Quảng Trị":"qutr","Thừa Thiên Huế":"thth",
 }
-DAI_API = {name: _API_BASE + code for name, code in _GAME_CODES.items()}
+DAI_API = {n: _API_BASE + c for n,c in _GAME_CODES.items()}
+LICH_NAM = {
+    "Chủ Nhật":["Tiền Giang","Kiên Giang","Đà Lạt"],
+    "Thứ 2":["TP. Hồ Chí Minh","Đồng Tháp","Cà Mau"],
+    "Thứ 3":["Bến Tre","Vũng Tàu","Bạc Liêu"],
+    "Thứ 4":["Đồng Nai","Cần Thơ","Sóc Trăng"],
+    "Thứ 5":["Tây Ninh","An Giang","Bình Thuận"],
+    "Thứ 6":["Vĩnh Long","Bình Dương","Trà Vinh"],
+    "Thứ 7":["TP. Hồ Chí Minh","Long An","Bình Phước","Hậu Giang"],
+}
+LICH_TRUNG = {
+    "Chủ Nhật":["Kon Tum","Khánh Hòa","Thừa Thiên Huế"],
+    "Thứ 2":["Thừa Thiên Huế","Phú Yên"],
+    "Thứ 3":["Đắk Lắk","Quảng Nam"],
+    "Thứ 4":["Đà Nẵng","Khánh Hòa"],
+    "Thứ 5":["Bình Định","Quảng Trị","Quảng Bình"],
+    "Thứ 6":["Gia Lai","Ninh Thuận"],
+    "Thứ 7":["Đà Nẵng","Quảng Ngãi","Đắk Nông"],
+}
+LICH_BAC = {
+    "Chủ Nhật":"Thái Bình","Thứ 2":"Hà Nội","Thứ 3":"Quảng Ninh",
+    "Thứ 4":"Bắc Ninh","Thứ 5":"Hà Nội","Thứ 6":"Hải Phòng","Thứ 7":"Nam Định",
+}
+DAYS_VI = ["Thứ 2","Thứ 3","Thứ 4","Thứ 5","Thứ 6","Thứ 7","Chủ Nhật"]
 
-LICH_QUAY_NAM = {
-    "Chủ Nhật": ["Tiền Giang", "Kiên Giang", "Đà Lạt"],
-    "Thứ 2": ["TP. Hồ Chí Minh", "Đồng Tháp", "Cà Mau"],
-    "Thứ 3": ["Bến Tre", "Vũng Tàu", "Bạc Liêu"],
-    "Thứ 4": ["Đồng Nai", "Cần Thơ", "Sóc Trăng"],
-    "Thứ 5": ["Tây Ninh", "An Giang", "Bình Thuận"],
-    "Thứ 6": ["Vĩnh Long", "Bình Dương", "Trà Vinh"],
-    "Thứ 7": ["TP. Hồ Chí Minh", "Long An", "Bình Phước", "Hậu Giang"],
-}
-LICH_QUAY_TRUNG = {
-    "Chủ Nhật": ["Kon Tum", "Khánh Hòa", "Thừa Thiên Huế"],
-    "Thứ 2": ["Thừa Thiên Huế", "Phú Yên"],
-    "Thứ 3": ["Đắk Lắk", "Quảng Nam"],
-    "Thứ 4": ["Đà Nẵng", "Khánh Hòa"],
-    "Thứ 5": ["Bình Định", "Quảng Trị", "Quảng Bình"],
-    "Thứ 6": ["Gia Lai", "Ninh Thuận"],
-    "Thứ 7": ["Đà Nẵng", "Quảng Ngãi", "Đắk Nông"],
-}
-LICH_QUAY_BAC = {
-    "Chủ Nhật": "Thái Bình", "Thứ 2": "Hà Nội", "Thứ 3": "Quảng Ninh",
-    "Thứ 4": "Bắc Ninh", "Thứ 5": "Hà Nội", "Thứ 6": "Hải Phòng", "Thứ 7": "Nam Định",
-}
-
-DAYS_VI = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"]
-
-# ─────────────────────────────────────────────
+# ══════════════════════════════════════════════════
 # NETWORK
-# ─────────────────────────────────────────────
-
+# ══════════════════════════════════════════════════
 @st.cache_resource
-def _get_session():
+def _sess():
     s = requests.Session()
-    retry = Retry(total=3, connect=3, read=3, backoff_factor=0.5,
-                  status_forcelist=[429, 500, 502, 503, 504],
-                  allowed_methods=frozenset(["GET"]))
-    s.mount("https://", HTTPAdapter(max_retries=retry))
-    s.mount("http://", HTTPAdapter(max_retries=retry))
+    r = Retry(total=3, backoff_factor=0.5,
+              status_forcelist=[429,500,502,503,504],
+              allowed_methods=frozenset(["GET"]))
+    s.mount("https://", HTTPAdapter(max_retries=r))
     return s
 
-def http_get_issue_list(url: str) -> list:
+def load_data(station: str) -> list:
+    key = station
+    if "Miền Bắc" in station and "75s" not in station:
+        key = "Miền Bắc"
+    url = DAI_API.get(key, "")
+    if not url:
+        return []
     try:
-        s = _get_session()
-        resp = s.get(url, headers=HEADERS, timeout=15)
-        resp.raise_for_status()
-        return resp.json().get("t", {}).get("issueList", [])
+        r = _sess().get(url, headers=HEADERS, timeout=15)
+        r.raise_for_status()
+        return r.json().get("t", {}).get("issueList", [])
     except Exception as e:
-        st.error(f"Lỗi tải dữ liệu: {e}")
+        st.error(f"Lỗi tải: {e}")
         return []
 
-# ─────────────────────────────────────────────
+# ══════════════════════════════════════════════════
 # DATA PARSING
-# ─────────────────────────────────────────────
-
-_detail_cache = {}
-
-def _debug_item_keys(item: dict) -> str:
-    """Trả về thông tin debug field của item"""
-    keys = list(item.keys())
-    preview = {}
-    for k in keys:
-        v = item[k]
-        preview[k] = str(v)[:80] if v else "(empty)"
-    return preview
-
+# ══════════════════════════════════════════════════
 def parse_detail(item: dict) -> list:
-    """
-    Hỗ trợ nhiều format API:
-    - detail: JSON string dạng list  →  list of strings
-    - detail: list                   →  dùng trực tiếp
-    - openCode / prizeNum: "x,x|x,x" → split by |
-    """
-    # 1. Thử field 'detail'
-    raw = item.get("detail", "")
-
-    # Nếu đã là list
+    raw = item.get("detail", None)
     if isinstance(raw, list):
-        return [str(x) for x in raw]
-
-    cache_key = str(id(item)) + str(raw)[:50]
-    if cache_key in _detail_cache:
-        return _detail_cache[cache_key]
-
-    result = []
-
-    if raw and str(raw).strip():
-        raw_str = str(raw).strip()
+        out = []
+        for x in raw:
+            out.append(",".join(str(v).strip() for v in x) if isinstance(x,(list,tuple)) else str(x).strip())
+        return out
+    if isinstance(raw, str) and raw.strip():
         try:
-            parsed = json.loads(raw_str)
-            if isinstance(parsed, list):
-                result = [str(x) for x in parsed]
-            elif isinstance(parsed, dict):
-                result = [str(v) for v in parsed.values()]
+            p = json.loads(raw)
+            if isinstance(p, list):
+                out = []
+                for x in p:
+                    out.append(",".join(str(v).strip() for v in x) if isinstance(x,(list,tuple)) else str(x).strip())
+                return out
         except Exception:
-            # Thử split bằng "|" (format openCode)
-            if "|" in raw_str:
-                result = [part.strip() for part in raw_str.split("|")]
-            elif raw_str:
-                result = [raw_str]
-
-    # 2. Fallback: thử các field phổ biến khác
-    if not result:
-        for field_name in ("openCode", "prizeNum", "number", "code"):
-            val = item.get(field_name, "")
-            if val and str(val).strip():
-                val_str = str(val).strip()
-                if "|" in val_str:
-                    result = [part.strip() for part in val_str.split("|")]
-                elif "," in val_str:
-                    result = [val_str]
-                else:
-                    result = [val_str]
-                break
-
-    if len(_detail_cache) > 500:
-        keys = list(_detail_cache.keys())
-        for k in keys[:200]:
-            del _detail_cache[k]
-    _detail_cache[cache_key] = result
-    return result
-
-def get_prizes_flat(item: dict) -> list:
-    try:
-        detail = parse_detail(item)
-        prizes_flat = []
-        for field in detail:
-            if isinstance(field, str):
-                parts = [x.strip() for x in field.split(",") if x.strip()]
-                prizes_flat += parts
-            else:
-                s = str(field).strip()
-                if s:
-                    prizes_flat.append(s)
-        return prizes_flat
-    except Exception:
-        return []
-
-def get_two_digit_numbers(prizes_flat: list) -> list:
-    results = []
-    for prize in prizes_flat:
-        prize = prize.strip()
-        if len(prize) >= 2 and prize[-2:].isdigit():
-            results.append(prize[-2:])
-    return results
-
-def get_list0(prizes_flat: list) -> list:
-    g_nums = []
-    for prize in prizes_flat:
-        g_nums.extend([ch for ch in prize.strip() if ch.isdigit()])
-    counter = Counter(g_nums)
-    counts = [counter.get(str(d), 0) for d in range(10)]
-    return [str(i) for i, v in enumerate(counts) if v == 0]
-
-def get_missing_heads(prizes_flat: list) -> list:
-    heads = []
-    for p in prizes_flat:
-        p = p.strip()
-        if len(p) >= 2:
-            heads.append(p[-2])
-        elif len(p) == 1:
-            heads.append("0")
-    counter = Counter(heads)
-    counts = [counter.get(str(d), 0) for d in range(10)]
-    return [str(i) for i, v in enumerate(counts) if v == 0]
-
-def bridge_ab(list1, list2):
-    result_set = {a + b for a in list1 for b in list2}
-    result_set.update(b + a for a in list1 for b in list2)
-    return sorted(result_set)
-
-# Chạm + Tổng lookup
-CHAM_LOOKUP = {}
-TONG_LOOKUP = {}
-all_nums = [f"{i:02d}" for i in range(100)]
-for d in range(10):
-    ds = str(d)
-    CHAM_LOOKUP[ds] = [n for n in all_nums if ds in n]
-for d in range(10):
-    TONG_LOOKUP[str(d)] = [n for n in all_nums if (int(n[0]) + int(n[1])) % 10 == d]
-
-def generate_cham_tong(list_missing: list) -> list:
-    result_set = set()
-    for d_str in list_missing:
-        result_set.update(CHAM_LOOKUP.get(d_str, ()))
-        result_set.update(TONG_LOOKUP.get(d_str, ()))
-    return sorted(result_set)
-
-# ─────────────────────────────────────────────
-# PATTERN DETECTION
-# ─────────────────────────────────────────────
-
-def detect_special_pattern(prize_str):
-    prize_str = prize_str.strip()
-    if len(prize_str) < 2:
-        return False, None
-    digits = [ch for ch in prize_str if ch.isdigit()]
-    unique_digits = set(digits)
-    if len(unique_digits) <= 3:
-        return True, prize_str[-2:]
-    return False, None
-
-def detect_consecutive_repeat(prize_str, min_count=3):
-    prize_str = prize_str.strip()
-    if len(prize_str) < min_count:
-        return False, None
-    for i in range(len(prize_str) - min_count + 1):
-        first_digit = prize_str[i]
-        count = 1
-        for j in range(i + 1, len(prize_str)):
-            if prize_str[j] == first_digit:
-                count += 1
-            else:
-                break
-        if count >= min_count:
-            if len(prize_str) >= 2:
-                return True, prize_str[-2:]
-    return False, None
-
-def detect_lap(prize_str):
-    prize_str = prize_str.strip()
-    if len(prize_str) < 2:
-        return False, None
-    digit_count = Counter(ch for ch in prize_str if ch.isdigit())
-    if any(c >= 2 for c in digit_count.values()):
-        return True, prize_str[-2:]
-    return False, None
-
-def detect_ganh(prize_str):
-    prize_str = prize_str.strip()
-    if len(prize_str) < 2:
-        return False, None
-    if prize_str == prize_str[::-1]:
-        return True, prize_str[-2:]
-    return False, None
-
-# ─────────────────────────────────────────────
-# TÀI XỈU
-# ─────────────────────────────────────────────
-
-def get_gdb_digit_sum(item: dict):
-    prizes_flat = get_prizes_flat(item)
-    gdb = prizes_flat[0].strip() if prizes_flat else ""
-    total = sum(int(c) for c in gdb if c.isdigit())
-    return item.get("turnNum", ""), gdb, total
-
-def build_tx_sequence(raw_data: list) -> list:
-    seq = []
-    for item in reversed(raw_data):
-        turn, gdb, total = get_gdb_digit_sum(item)
-        result = "T" if total >= 23 else "X"
-        seq.append({"turn": turn, "gdb": gdb, "total": total, "result": result})
-    return seq
-
-# ─────────────────────────────────────────────
-# MAIN APP
-# ─────────────────────────────────────────────
-
-def get_current_day_vietnamese():
-    return DAYS_VI[datetime.now().weekday()]
-
-def get_station_list(region, day):
-    if region == "Miền Bắc":
-        tinh = LICH_QUAY_BAC.get(day, "")
-        return [f"Miền Bắc ({tinh})", "VN Miền Bắc 75s", "Miền Bắc 75s"]
-    elif region == "Miền Nam":
-        return LICH_QUAY_NAM.get(day, [])
-    elif region == "Miền Trung":
-        return LICH_QUAY_TRUNG.get(day, [])
+            pass
+        if "|" in raw:
+            return [x.strip() for x in raw.split("|") if x.strip()]
+        return [raw.strip()]
+    for key in ("openCode","prizeNum","number","code","prizes"):
+        val = item.get(key,"")
+        if val and str(val).strip():
+            s = str(val).strip()
+            if "|" in s: return [x.strip() for x in s.split("|") if x.strip()]
+            return [s]
     return []
 
-def fetch_data(station_display: str) -> list:
-    api_key = station_display
-    if "Miền Bắc" in station_display and "75s" not in station_display:
-        api_key = "Miền Bắc"
-    url = DAI_API.get(api_key)
-    if not url:
-        st.error(f"Không tìm thấy API cho: {station_display}")
-        return []
-    with st.spinner(f"Đang tải dữ liệu {station_display}..."):
-        return http_get_issue_list(url)
-
-# ─────────────────────────────────────────────
-# TAB 1: CẦU LIST 0
-# ─────────────────────────────────────────────
-
-def render_tab1(raw_data):
-    if not raw_data:
-        st.info("Chưa có dữ liệu. Hãy chọn đài và tải dữ liệu.")
-        return
-
-    def diff(src, target):
-        return sorted(list(set(src) - set(target)))
-
-    processed = []
-    for item in raw_data:
-        prizes_flat = get_prizes_flat(item)
-        two_digits = get_two_digit_numbers(prizes_flat)
-        list0 = get_list0(prizes_flat)
-        # Lấy ngày từ openTime hoặc turnNum
-        open_time = item.get("openTime", "")
-        date_str = open_time.split(" ")[0] if open_time and " " in open_time else open_time
-        ky_str = item.get("turnNum", "")
-        # Nếu turnNum là chuỗi ngày thì dùng index
-        processed.append({
-            "ky": ky_str,
-            "date": date_str,
-            "list0": list0,
-            "res": two_digits,
-        })
-
-    rows = []
-    for i in range(len(processed)):
-        curr = processed[i]
-        # Sót K0
-        if i + 1 < len(processed):
-            l0_curr = processed[i]["list0"]
-            l0_next = processed[i + 1]["list0"]
-            current_dan = bridge_ab(l0_curr, l0_next)
-        else:
-            current_dan = []
-
-        row = {
-            "Kỳ": curr["ky"],
-            "Ngày": curr.get("date", ""),
-            "List 0": " ".join(curr["list0"]),
-            "Sót K0": " ".join(current_dan),
-        }
-        for k in range(1, 8):
-            target_idx = i - k
-            if target_idx < 0:
-                row[f"K{k}"] = ""
-            else:
-                res_target = processed[target_idx]["res"]
-                current_dan = diff(current_dan, res_target)
-                row[f"K{k}"] = " ".join(current_dan)
-        rows.append(row)
-
-    import pandas as pd
-    df = pd.DataFrame(rows)
-
-    # ── Debug: xem cấu trúc API ──
-    with st.expander("🔍 Debug: Xem cấu trúc dữ liệu API (click để mở)"):
-        if raw_data:
-            item0 = raw_data[0]
-            st.write("**Keys của item:**", list(item0.keys()))
-            for k, v in item0.items():
-                st.write(f"`{k}` →", str(v)[:200])
-            st.write("---")
-            st.write("**prizes_flat mẫu (item[0]):**", get_prizes_flat(item0)[:10])
-            st.write("**list0 mẫu:**", get_list0(get_prizes_flat(item0)))
-
-    st.markdown("### 📊 Cầu List 0 (Truyền Thống)")
-
-    def highlight_dan(val):
-        if isinstance(val, str) and val and val != "":
-            return "background-color: #e8f8f5; color: #16a085;"
-        return ""
-
-    def highlight_ky(val):
-        return "background-color: #ffebee; color: #c0392b; font-weight: bold;"
-
-    styled = df.style\
-        .map(highlight_ky, subset=["Kỳ"])\
-        .map(lambda v: "background-color: #fafafa; color: #555;", subset=["Ngày"])\
-        .map(lambda v: "background-color: #fff8e1; color: #f57c00; font-weight:bold;" if v else "", subset=["List 0"])\
-        .map(lambda v: "background-color: #e1f5fe; color: #0277bd; font-weight:bold;" if v else "", subset=["Sót K0"])
-
-    st.dataframe(styled, use_container_width=True, height=600)
-
-# ─────────────────────────────────────────────
-# TAB 2: THIẾU ĐẦU & CHẠM TỔNG
-# ─────────────────────────────────────────────
-
-def render_tab2(raw_data):
-    if not raw_data:
-        st.info("Chưa có dữ liệu.")
-        return
-
-    st.markdown("### 📊 Cầu Thiếu Đầu & Chạm Tổng")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        use_duoi_db = st.checkbox("Đuôi ĐB", value=True, key="t2_duoi_db")
-        use_dau_db = st.checkbox("Đầu ĐB", value=False, key="t2_dau_db")
-    with col2:
-        use_duoi_g1 = st.checkbox("Đuôi G1", value=False, key="t2_duoi_g1")
-        use_dau_g1 = st.checkbox("Đầu G1", value=False, key="t2_dau_g1")
-
-    processed_data = []
-    for item in raw_data:
-        prizes_flat = get_prizes_flat(item)
-        missing_heads = get_missing_heads(prizes_flat)
-        processed_data.append({
-            "ky": item.get("turnNum", ""),
-            "missing_heads": missing_heads,
-            "full_prizes": prizes_flat,
-        })
-
-    def get_targets(prizes_flat):
-        targets = set()
-        if len(prizes_flat) > 0:
-            db = prizes_flat[0].strip()
-            if len(db) >= 2:
-                if use_duoi_db: targets.add(db[-2:])
-                if use_dau_db: targets.add(db[:2])
-        if len(prizes_flat) > 1:
-            g1 = prizes_flat[1].strip()
-            if len(g1) >= 2:
-                if use_duoi_g1: targets.add(g1[-2:])
-                if use_dau_g1: targets.add(g1[:2])
-        return targets
-
-    rows = []
-    for i, curr in enumerate(processed_data):
-        dan_ct = generate_cham_tong(curr["missing_heads"])
-        row = {
-            "Kỳ": curr["ky"],
-            "Thiếu Đầu": ",".join(curr["missing_heads"]),
-            "Dàn K0 (Chạm+Tổng)": " ".join(dan_ct),
-        }
-        for k in range(1, 8):
-            target_idx = i - k
-            if target_idx < 0:
-                row[f"K{k}"] = ""
-            else:
-                td = processed_data[target_idx]
-                targets = get_targets(td["full_prizes"])
-                hits = set(dan_ct).intersection(targets)
-                row[f"K{k}"] = f"✅ {','.join(sorted(hits))}" if hits else "-"
-        rows.append(row)
-
-    import pandas as pd
-    df = pd.DataFrame(rows)
-
-    def style_row(row):
-        styles = [""] * len(row)
-        for j, val in enumerate(row):
-            if isinstance(val, str) and val.startswith("✅"):
-                styles[j] = "background-color: #D4EDDA; color: #155724; font-weight: bold;"
-        return styles
-
-    styled = df.style.apply(style_row, axis=1)
-    st.dataframe(styled, use_container_width=True, height=600)
-
-# ─────────────────────────────────────────────
-# TAB 3: LÔ LẠ
-# ─────────────────────────────────────────────
-
-def render_tab3(raw_data, region="Miền Bắc"):
-    if not raw_data:
-        st.info("Chưa có dữ liệu.")
-        return
-
-    st.markdown("### 📊 Lô Lạ - Pattern Đặc Biệt")
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        use_special = st.checkbox("Số có ≤3 chữ số duy nhất", value=True, key="t3_special")
-        use_lap = st.checkbox("Lặp", value=False, key="t3_lap")
-    with col2:
-        use_ganh = st.checkbox("Gánh/Đảo", value=False, key="t3_ganh")
-        use_consecutive = st.checkbox("Số lặp liên tiếp (≥3)", value=False, key="t3_consec")
-    with col3:
-        keep_dup = st.checkbox("Giữ số trùng", value=False, key="t3_dup")
-        nhi_hop_mode = st.radio("Nhị hợp:", ["Mặc định", "Chỉ 1 giải", "Cả hai"],
-                                 index=2, key="t3_nhihop", horizontal=True)
-
-    nhi_hop_val = {"Mặc định": 0, "Chỉ 1 giải": 1, "Cả hai": 2}[nhi_hop_mode]
-    max_prize_index = 9 if "Bắc" in region else 13
-
-    def diff(src, target):
-        return sorted(list(set(src) - set(target)))
-
-    processed = []
-    for item in raw_data:
-        prizes_flat = get_prizes_flat(item)
-        two_digits = get_two_digit_numbers(prizes_flat)
-        special_los = []
-
-        for idx, prize in enumerate(prizes_flat):
-            if idx > max_prize_index:
-                break
-            prize = prize.strip()
-            found, lo = False, None
-
-            if use_consecutive:
-                found, lo = detect_consecutive_repeat(prize, 3)
-            if not found and use_lap:
-                found, lo = detect_lap(prize)
-            if not found and use_ganh:
-                found, lo = detect_ganh(prize)
-            if not found and use_special:
-                found, lo = detect_special_pattern(prize)
-
-            if found and lo:
-                prize_digits = set(d for d in prize if d.isdigit())
-                if prize_digits:
-                    if keep_dup:
-                        digits_str = "".join(sorted([d for d in prize if d.isdigit()]))
-                    else:
-                        digits_str = "".join(sorted(prize_digits))
-                    special_los.append(digits_str)
-
-        list0 = sorted(special_los) if keep_dup else sorted(set(special_los))
-
-        # Build Nhị Hợp
-        dan_nhi_hop = []
-        if list0:
-            all_digits = set()
-            for s in list0:
-                for ch in s:
-                    if ch.isdigit():
-                        all_digits.add(ch)
-            if nhi_hop_val == 0 and len(list0) > 1:
-                for d1 in sorted(all_digits):
-                    for d2 in sorted(all_digits):
-                        dan_nhi_hop.append(d1 + d2)
-            elif nhi_hop_val == 1 and len(list0) == 1:
-                for d1 in sorted(all_digits):
-                    for d2 in sorted(all_digits):
-                        dan_nhi_hop.append(d1 + d2)
-            elif nhi_hop_val == 2:
-                for d1 in sorted(all_digits):
-                    for d2 in sorted(all_digits):
-                        dan_nhi_hop.append(d1 + d2)
-
-        dan_nhi_hop = sorted(set(dan_nhi_hop))
-        processed.append({
-            "ky": item.get("turnNum", ""),
-            "list0": list0,
-            "dan": dan_nhi_hop,
-            "res": two_digits,
-        })
-
-    rows = []
-    for i, curr in enumerate(processed):
-        is_single = len(curr["list0"]) == 1
-        is_multi = len(curr["list0"]) > 1
-        show = (nhi_hop_val == 0 and is_multi) or \
-               (nhi_hop_val == 1 and is_single) or \
-               (nhi_hop_val == 2 and (is_single or is_multi))
-
-        if not show:
-            rows.append({
-                "Kỳ": curr["ky"],
-                "List 0 (Lô Lạ)": "",
-                "Dàn Nhị Hợp": "",
-                **{f"K{k}": "" for k in range(1, 11)},
-            })
-            continue
-
-        current_dan = curr["dan"][:]
-        row = {
-            "Kỳ": curr["ky"],
-            "List 0 (Lô Lạ)": ",".join(curr["list0"]),
-            "Dàn Nhị Hợp": " ".join(current_dan[:20]) + ("..." if len(current_dan) > 20 else ""),
-        }
-        for k in range(1, 11):
-            target_idx = i - k
-            if target_idx < 0:
-                row[f"K{k}"] = ""
-            else:
-                res_target = processed[target_idx]["res"]
-                current_dan = diff(current_dan, res_target)
-                row[f"K{k}"] = " ".join(current_dan) if current_dan else "-"
-        rows.append(row)
-
-    import pandas as pd
-    df = pd.DataFrame(rows)
-    st.dataframe(df, use_container_width=True, height=600)
-
-# ─────────────────────────────────────────────
-# TAB 4: LÔ XIÊN
-# ─────────────────────────────────────────────
-
-def render_tab5_loxien():
-    st.markdown("### 🔢 Công Cụ Ghép Xiên Tự Động")
-    st.caption("Xiên QUAY: Ghép quay vòng trong Nhóm 1 | Xiên NHÓM: Ghép giữa các nhóm")
-
-    col1, col2, col3, col4 = st.columns(4)
-    groups = []
-    for i, col in enumerate([col1, col2, col3, col4], 1):
-        with col:
-            txt = st.text_area(f"Nhóm {i}", height=120, key=f"lx_grp{i}",
-                               placeholder="Nhập các số, cách nhau bởi dấu cách hoặc phẩy")
-            nums = sorted(set(n.strip() for n in txt.replace(",", " ").split() if n.strip().isdigit()))
-            groups.append(nums)
-
-    col_sep, col_x2, col_x3, col_x4 = st.columns([2, 1, 1, 1])
-    with col_sep:
-        sep = st.selectbox("Ký tự nối:", ["&", ",", "-", " "], key="lx_sep")
-    with col_x2:
-        use_x2 = st.checkbox("Xiên 2", value=True, key="lx_x2")
-    with col_x3:
-        use_x3 = st.checkbox("Xiên 3", value=True, key="lx_x3")
-    with col_x4:
-        use_x4 = st.checkbox("Xiên 4", value=True, key="lx_x4")
-
-    btn_quay, btn_nhom, _ = st.columns([1, 1, 4])
-    with btn_quay:
-        do_quay = st.button("🔄 Tạo Xiên Quay", use_container_width=True)
-    with btn_nhom:
-        do_nhom = st.button("🔗 Tạo Xiên Nhóm", use_container_width=True)
-
-    if do_quay:
-        nums = groups[0]
-        if len(nums) < 2:
-            st.warning("Nhập ít nhất 2 số ở Nhóm 1!")
-        else:
-            cols = st.columns(3)
-            for idx, (k, use) in enumerate([(2, use_x2), (3, use_x3), (4, use_x4)]):
-                with cols[idx]:
-                    if use:
-                        combos = list(itertools.combinations(nums, k))
-                        result = ";\n".join(sep.join(c) for c in combos)
-                        st.text_area(f"Xiên {k} ({len(combos)} cặp)", value=result, height=200, key=f"lx_r_quay{k}")
-
-    if do_nhom:
-        cols = st.columns(3)
-        for idx, (k, use) in enumerate([(2, use_x2), (3, use_x3), (4, use_x4)]):
-            with cols[idx]:
-                if use:
-                    src = groups[:k]
-                    if all(src):
-                        res = list(itertools.product(*src))
-                        result = ";\n".join(sep.join(c) for c in res)
-                        st.text_area(f"Xiên {k} ({len(res)} cặp)", value=result, height=200, key=f"lx_r_nhom{k}")
-                    else:
-                        st.warning(f"Cần nhập đủ {k} nhóm!")
-
-# ─────────────────────────────────────────────
-# TAB 5: TÀI / XỈU
-# ─────────────────────────────────────────────
-
-def render_tab_taixiu(raw_data):
-    if not raw_data:
-        st.info("Chưa có dữ liệu.")
-        return
-
-    st.markdown("### 🎲 Phân Tích Tài / Xỉu")
-
-    seq = build_tx_sequence(raw_data)
-    if not seq:
-        st.warning("Không đủ dữ liệu.")
-        return
-
-    # Stats
-    total_t = sum(1 for d in seq if d["result"] == "T")
-    total_x = len(seq) - total_t
-    pct_t = total_t / len(seq) * 100
-
-    last = seq[-1]["result"]
-    streak = 1
-    for d in reversed(seq[:-1]):
-        if d["result"] == last:
-            streak += 1
-        else:
-            break
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Tổng kỳ", len(seq))
-    c2.metric("🔴 Tài", f"{total_t} ({pct_t:.0f}%)")
-    c3.metric("🔵 Xỉu", f"{total_x} ({100 - pct_t:.0f}%)")
-    streak_name = "Tài 🔴" if last == "T" else "Xỉu 🔵"
-    c4.metric("Chuỗi hiện tại", f"{streak} {streak_name}")
-
-    latest = seq[-1]
-    st.info(f"**Kỳ mới nhất:** {latest['turn']}  |  **GĐB:** {latest['gdb']}  |  "
-            f"**Tổng:** {latest['total']}  →  {'**TÀI 🔴**' if latest['result'] == 'T' else '**XỈU 🔵**'}")
-
-    # Bead road
-    st.markdown("#### Bản Đồ Cầu Tài/Xỉu (Bead Road)")
-    bead_html = _build_bead_road_html(seq)
-    st.components.v1.html(bead_html, height=250, scrolling=True)
-
-    # Detail table
-    st.markdown("#### 15 Kỳ Gần Nhất")
-    import pandas as pd
-    recent = seq[-15:]
-    table_rows = []
-    for i, d in enumerate(recent):
-        s = 1
-        for j in range(i - 1, -1, -1):
-            if recent[j]["result"] == d["result"]:
-                s += 1
-            else:
-                break
-        table_rows.append({
-            "Kỳ": d["turn"],
-            "GĐB": d["gdb"],
-            "Tổng": d["total"],
-            "Kết quả": "TÀI 🔴" if d["result"] == "T" else "XỈU 🔵",
-            "Chuỗi": f"{s} {'Tài' if d['result'] == 'T' else 'Xỉu'} liên tiếp",
-        })
-    df = pd.DataFrame(list(reversed(table_rows)))
-
-    def color_result(val):
-        if "TÀI" in str(val):
-            return "background-color: #fdecea; color: #c0392b; font-weight:bold;"
-        elif "XỈU" in str(val):
-            return "background-color: #e8f4fd; color: #1565c0; font-weight:bold;"
-        return ""
-
-    styled = df.style.map(color_result, subset=["Kết quả"])
-    st.dataframe(styled, use_container_width=True)
-
-def _build_bead_road_html(seq):
-    MAX_ROWS = 6
-    CELL = 32
-    PAD = 4
-    TAI_COLOR = "#c0392b"
-    XIU_COLOR = "#1a6494"
-
-    col, row, prev_result = 0, 0, None
-    cells = []
-    for d in seq:
-        r = d["result"]
-        if prev_result is not None and (r != prev_result or row >= MAX_ROWS):
-            col += 1
-            row = 0
-        color = TAI_COLOR if r == "T" else XIU_COLOR
-        x = PAD + col * (CELL + 2)
-        y = PAD + row * (CELL + 2)
-        cells.append((x, y, color, r, d["total"]))
-        prev_result = r
-        row += 1
-
-    total_cols = col + 1
-    w = PAD + total_cols * (CELL + 2) + PAD
-    h = PAD + MAX_ROWS * (CELL + 2) + PAD
-
-    svg_items = []
-    for (x, y, color, lbl, total) in cells:
-        cx = x + CELL // 2
-        cy = y + CELL // 2
-        svg_items.append(
-            f'<circle cx="{cx}" cy="{cy}" r="{CELL//2 - 2}" fill="{color}" stroke="white" stroke-width="1"/>'
-            f'<text x="{cx}" y="{cy + 4}" text-anchor="middle" fill="white" font-size="12" font-weight="bold">{lbl}</text>'
-            f'<text x="{cx + CELL//2 - 4}" y="{cy + CELL//2 - 2}" text-anchor="end" fill="#cccccc" font-size="8">{total}</text>'
-        )
-
-    svg_content = "\n".join(svg_items)
-    return f"""
-    <div style="overflow-x:auto; background:#0d2137; border-radius:8px; padding:4px;">
-      <svg width="{w}" height="{h}" xmlns="http://www.w3.org/2000/svg">
-        <rect width="{w}" height="{h}" fill="#0d2137"/>
-        {svg_content}
-      </svg>
-    </div>
+def pf(item): 
+    return [p.strip() for f in parse_detail(item) for p in str(f).split(",") if p.strip()]
+
+def td(prizes): 
+    return [p[-2:] for p in prizes if len(p)>=2 and p[-2:].isdigit()]
+
+def list0(prizes):
+    cnt = Counter(c for p in prizes for c in p if c.isdigit())
+    return [str(d) for d in range(10) if not cnt.get(str(d),0)]
+
+def miss_heads(prizes):
+    heads=[p[-2] if len(p)>=2 else "0" for p in prizes if p.strip()]
+    cnt=Counter(heads)
+    return [str(d) for d in range(10) if not cnt.get(str(d),0)]
+
+def bridge(a,b): 
+    return sorted({x+y for x in a for y in b}|{y+x for x in a for y in b})
+
+_CH = {str(d):[f"{i:02d}" for i in range(100) if str(d) in f"{i:02d}"] for d in range(10)}
+_TG = {str(d):[f"{i:02d}" for i in range(100) if (i//10+i%10)%10==d] for d in range(10)}
+
+def cham_tong(miss):
+    s=set()
+    for d in miss: s.update(_CH.get(d,[])); s.update(_TG.get(d,[]))
+    return sorted(s)
+
+def ky(item):   return str(item.get("turnNum","") or item.get("issueNum","") or "")
+def dt(item):   return str(item.get("openTime","") or "").split(" ")[0]
+def stations(region,day):
+    if region=="Miền Bắc": return [f"Miền Bắc ({LICH_BAC.get(day,'')})", "VN Miền Bắc 75s","Miền Bắc 75s"]
+    if region=="Miền Nam":  return LICH_NAM.get(day,[])
+    return LICH_TRUNG.get(day,[])
+
+# ══════════════════════════════════════════════════
+# HTML TABLE BUILDER
+# ══════════════════════════════════════════════════
+def html_table(headers, rows, col_styles=None):
     """
+    headers: list of str
+    rows: list of list of str/html
+    col_styles: dict {col_index: "css"} or {col_name: "css"}
+    """
+    th_style = "background:#c0392b;color:#fff;padding:7px 10px;font-size:13px;white-space:nowrap;border:1px solid #e0e0e0"
+    
+    # Build header index map
+    hi = {h:i for i,h in enumerate(headers)}
+    
+    def cs(ci):
+        if col_styles is None: return "padding:6px 8px;font-size:13px;border:1px solid #e8e8e8;white-space:nowrap"
+        style = col_styles.get(ci, col_styles.get(headers[ci] if ci<len(headers) else "", ""))
+        base = "padding:6px 8px;font-size:13px;border:1px solid #e8e8e8;white-space:nowrap;"
+        return base + style
 
-# ─────────────────────────────────────────────
-# KẾT QUẢ PANEL
-# ─────────────────────────────────────────────
+    html = '<div style="overflow-x:auto;border-radius:8px;box-shadow:0 1px 4px #ccc">'
+    html += '<table style="border-collapse:collapse;width:100%;background:#fff">'
+    html += "<thead><tr>" + "".join(f'<th style="{th_style}">{h}</th>' for h in headers) + "</tr></thead>"
+    html += "<tbody>"
+    for ri, row in enumerate(rows):
+        bg = "#f9f9f9" if ri%2 else "#fff"
+        html += f'<tr style="background:{bg}">'
+        for ci, cell in enumerate(row):
+            html += f'<td style="{cs(ci)}">{cell if cell is not None else ""}</td>'
+        html += "</tr>"
+    html += "</tbody></table></div>"
+    return html
 
-def render_result_panel(raw_data, show_g4g7=False):
-    if not raw_data:
+# ══════════════════════════════════════════════════
+# RESULT PANEL (right sidebar)
+# ══════════════════════════════════════════════════
+PRIZE_CONF = [
+    ("ĐB","#c0392b",1),("G1","#e67e22",1),("G2","#f39c12",2),
+    ("G3","#27ae60",6),("G4","#2980b9",4),("G5","#8e44ad",6),
+    ("G6","#16a085",3),("G7","#95a5a6",4),
+]
+
+def result_panel(raw, show_g47):
+    if not raw:
+        st.info("Chưa có dữ liệu")
+        return
+    for item in raw[:2]:
+        detail = parse_detail(item)
+        html = f"""
+        <div style="background:#fff;border:1px solid #ddd;border-radius:8px;
+                    padding:10px;margin-bottom:10px;font-family:Consolas,monospace">
+          <div style="color:#c0392b;font-weight:700;font-size:13px;margin-bottom:6px">
+            🎯 Kỳ {ky(item)} &nbsp;<span style="color:#888;font-size:11px">{dt(item)}</span>
+          </div>
+        """
+        idx = 0
+        for label, color, cnt in PRIZE_CONF:
+            if not show_g47 and label in ("G4","G5","G6","G7"):
+                idx += cnt; continue
+            vals = []
+            for _ in range(cnt):
+                if idx < len(detail):
+                    vals.append(detail[idx].strip()); idx += 1
+            val_str = " &nbsp; ".join(f"<b>{v}</b>" for v in vals if v)
+            if val_str:
+                html += (f'<div style="display:flex;align-items:center;gap:6px;margin:3px 0">'
+                         f'<span style="background:{color};color:#fff;border-radius:4px;'
+                         f'padding:1px 6px;font-size:11px;font-weight:700;min-width:28px;text-align:center">{label}</span>'
+                         f'<span style="font-size:14px;color:#222;letter-spacing:1px">{val_str}</span>'
+                         f'</div>')
+        html += "</div>"
+        st.markdown(html, unsafe_allow_html=True)
+
+    # Đầu/đuôi
+    prizes = pf(raw[0])
+    nums = td(prizes)
+    h2t = {str(i):[] for i in range(10)}
+    t2h = {str(i):[] for i in range(10)}
+    for n in nums:
+        h2t[n[0]].append(n[1]); t2h[n[1]].append(n[0])
+
+    rows = [[str(i),",".join(sorted(h2t[str(i)])),str(i),",".join(sorted(t2h[str(i)]))] for i in range(10)]
+    tbl = html_table(
+        ["Đầu","Đuôi ra","Đuôi","Đầu ra"], rows,
+        {0:"color:#c0392b;font-weight:700;text-align:center",
+         1:"color:#2471a3",
+         2:"color:#c0392b;font-weight:700;text-align:center",
+         3:"color:#2471a3"}
+    )
+    st.markdown(f"**📊 Đầu / Đuôi**")
+    st.markdown(tbl, unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════
+# TAB 1 — CẦU LIST 0
+# ══════════════════════════════════════════════════
+def tab_list0(raw):
+    if not raw:
+        st.info("Chọn đài và nhấn **Tải Dữ Liệu**")
         return
 
-    st.markdown("#### 📋 Kết Quả Mới Nhất")
+    with st.expander("🔍 Debug API (click nếu bảng trống)"):
+        item0 = raw[0]
+        st.write("Fields:", list(item0.keys()))
+        for k,v in item0.items():
+            st.code(f"{k}: {str(v)[:200]}")
+        p0 = pf(item0)
+        st.write("prizes_flat:", p0[:10])
+        st.write("list0:", list0(p0))
 
-    PRIZE_LABELS_MB = ["ĐB", "G1", "G2", "G2", "G3", "G3", "G3", "G3", "G3", "G3",
-                       "G4", "G4", "G4", "G4", "G5", "G5", "G5", "G5", "G5", "G5",
-                       "G6", "G6", "G6", "G7", "G7", "G7", "G7"]
+    proc = [{"ky":ky(i),"dt":dt(i),"l0":list0(pf(i)),"res":td(pf(i))} for i in raw]
 
-    for period_idx in range(min(2, len(raw_data))):
-        item = raw_data[period_idx]
-        detail = parse_detail(item)
-        turn = item.get("turnNum", "")
-        open_time = item.get("openTime", "")
-        st.markdown(f"**🎯 Kỳ {turn}** ({open_time})")
+    headers = ["Kỳ","Ngày","List 0","Sót K0"] + [f"K{k}" for k in range(1,8)]
+    col_styles = {
+        0:"color:#c0392b;font-weight:700;text-align:center",
+        1:"color:#7f8c8d",
+        2:"background:#fff8e1;color:#e67e22;font-weight:700",
+        3:"background:#e8f4fd;color:#2471a3;font-weight:700",
+        **{4+k: "background:#eafaf1;color:#1e8449" for k in range(7)},
+    }
 
-        for idx, content in enumerate(detail):
-            if idx >= len(PRIZE_LABELS_MB):
-                break
-            label = PRIZE_LABELS_MB[idx] if idx < len(PRIZE_LABELS_MB) else f"G{idx}"
-            if not show_g4g7 and label in ("G4", "G5", "G6", "G7"):
-                continue
-            if not content or content.strip() in ("", "-"):
-                continue
-            st.markdown(f"`{label}` &nbsp; **{content.strip()}**", unsafe_allow_html=True)
-
-        if period_idx < min(2, len(raw_data)) - 1:
-            st.divider()
-
-    # Đầu/Đuôi stats
-    st.markdown("#### 📊 Thống Kê Đầu/Đuôi")
-    latest_item = raw_data[0]
-    prizes_flat = get_prizes_flat(latest_item)
-    all_numbers = [p.strip() for p in prizes_flat if len(p.strip()) >= 2]
-
-    head_to_tails = {str(i): [] for i in range(10)}
-    tail_to_heads = {str(i): [] for i in range(10)}
-    for num in all_numbers:
-        if len(num) >= 2:
-            last2 = num[-2:]
-            if last2.isdigit():
-                h, t = last2[0], last2[1]
-                head_to_tails[h].append(t)
-                tail_to_heads[t].append(h)
-
-    import pandas as pd
     rows = []
-    for i in range(10):
-        d = str(i)
-        rows.append({
-            "Đầu": d,
-            "Đuôi ra": ",".join(sorted(head_to_tails[d])),
-            " ": "",
-            "Đuôi": d,
-            "Đầu ra": ",".join(sorted(tail_to_heads[d])),
-        })
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    for i, curr in enumerate(proc):
+        dan = bridge(curr["l0"], proc[i+1]["l0"]) if i+1 < len(proc) else []
+        row = [
+            curr["ky"], curr["dt"],
+            " ".join(curr["l0"]) if curr["l0"] else "<span style='color:#bbb'>—</span>",
+            " ".join(dan) if dan else "<span style='color:#bbb'>—</span>",
+        ]
+        cur = dan[:]
+        for k in range(1,8):
+            t = i-k
+            if t < 0:
+                row.append("")
+            else:
+                cur = sorted(set(cur) - set(proc[t]["res"]))
+                if cur:
+                    row.append(" ".join(cur))
+                else:
+                    row.append("<span style='color:#27ae60;font-weight:700'>✅ Trúng</span>")
+        rows.append(row)
 
-# ─────────────────────────────────────────────
-# MAIN
-# ─────────────────────────────────────────────
+    st.markdown(html_table(headers, rows, col_styles), unsafe_allow_html=True)
 
-def main():
-    st.set_page_config(
-        page_title="Phân Tích Xổ Số",
-        page_icon="🎲",
-        layout="wide",
-        initial_sidebar_state="expanded",
+# ══════════════════════════════════════════════════
+# TAB 2 — THIẾU ĐẦU
+# ══════════════════════════════════════════════════
+def tab_thieu_dau(raw):
+    if not raw:
+        st.info("Chọn đài và nhấn **Tải Dữ Liệu**")
+        return
+
+    c1,c2 = st.columns(2)
+    duoi_db = c1.checkbox("✅ Đuôi ĐB", True,  key="t2a")
+    dau_db  = c1.checkbox("✅ Đầu ĐB",  False, key="t2b")
+    duoi_g1 = c2.checkbox("✅ Đuôi G1", False, key="t2c")
+    dau_g1  = c2.checkbox("✅ Đầu G1",  False, key="t2d")
+
+    def targets(prizes):
+        t = set()
+        if prizes and len(prizes[0])>=2:
+            if duoi_db: t.add(prizes[0][-2:])
+            if dau_db:  t.add(prizes[0][:2])
+        if len(prizes)>1 and len(prizes[1])>=2:
+            if duoi_g1: t.add(prizes[1][-2:])
+            if dau_g1:  t.add(prizes[1][:2])
+        return t
+
+    proc = [{"ky":ky(i),"dt":dt(i),"mh":miss_heads(pf(i)),"pf":pf(i)} for i in raw]
+
+    headers = ["Kỳ","Ngày","Thiếu Đầu","Dàn Chạm+Tổng"] + [f"K{k}" for k in range(1,8)]
+    col_styles = {
+        0:"color:#c0392b;font-weight:700;text-align:center",
+        1:"color:#7f8c8d",
+        2:"background:#fff8e1;color:#e67e22;font-weight:700",
+        3:"background:#e8f4fd;color:#2471a3",
+    }
+
+    rows = []
+    for i, curr in enumerate(proc):
+        dan = cham_tong(curr["mh"])
+        row = [
+            curr["ky"], curr["dt"],
+            " ".join(curr["mh"]) if curr["mh"] else "—",
+            " ".join(dan),
+        ]
+        for k in range(1,8):
+            t = i-k
+            if t<0:
+                row.append("")
+            else:
+                hits = set(dan) & targets(proc[t]["pf"])
+                if hits:
+                    row.append(f"<span style='color:#27ae60;font-weight:700'>✅ {','.join(sorted(hits))}</span>")
+                else:
+                    row.append("<span style='color:#bbb'>—</span>")
+        rows.append(row)
+
+    st.markdown(html_table(headers, rows, col_styles), unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════
+# TAB 3 — LÔ LẠ
+# ══════════════════════════════════════════════════
+def _detect(prize, use_s, use_l, use_g, use_c):
+    s = prize.strip()
+    if len(s) < 2: return False, None
+    if use_c:
+        for i in range(len(s)-2):
+            if len(set(s[i:i+3]))==1: return True, s[-2:]
+    if use_l:
+        if any(c>=2 for c in Counter(d for d in s if d.isdigit()).values()): return True, s[-2:]
+    if use_g:
+        if s == s[::-1]: return True, s[-2:]
+    if use_s:
+        if len(set(d for d in s if d.isdigit()))<=3: return True, s[-2:]
+    return False, None
+
+def tab_lo_la(raw, region):
+    if not raw:
+        st.info("Chọn đài và nhấn **Tải Dữ Liệu**")
+        return
+
+    c1,c2,c3 = st.columns(3)
+    use_s  = c1.checkbox("≤3 chữ số duy nhất", True,  key="t3s")
+    use_l  = c1.checkbox("Lặp",                False, key="t3l")
+    use_g  = c2.checkbox("Gánh/Đảo",           False, key="t3g")
+    use_c  = c2.checkbox("Lặp liên tiếp ≥3",   False, key="t3c")
+    dup    = c3.checkbox("Giữ số trùng",        False, key="t3d")
+    mode   = c3.radio("Nhị hợp", ["Mặc định","Chỉ 1 giải","Cả hai"], index=2,
+                      horizontal=True, key="t3m")
+    mv = {"Mặc định":0,"Chỉ 1 giải":1,"Cả hai":2}[mode]
+    mx = 9 if "Bắc" in region else 13
+
+    proc = []
+    for item in raw:
+        p = pf(item)
+        lo_set = []
+        for ci, prize in enumerate(p):
+            if ci>mx: break
+            found, _ = _detect(prize, use_s, use_l, use_g, use_c)
+            if found:
+                digits = [d for d in prize if d.isdigit()]
+                lo_set.append("".join(sorted(digits) if dup else sorted(set(digits))))
+        l0 = sorted(lo_set) if dup else sorted(set(lo_set))
+        all_d = sorted(set(c for s in l0 for c in s if c.isdigit()))
+        n1,nm = len(l0)==1, len(l0)>1
+        show = (mv==0 and nm) or (mv==1 and n1) or (mv==2 and (n1 or nm))
+        dan = sorted({a+b for a in all_d for b in all_d}) if show and all_d else []
+        proc.append({"ky":ky(item),"dt":dt(item),"l0":l0,"dan":dan,"res":td(p),"show":show})
+
+    headers = ["Kỳ","Ngày","List 0 Lạ","Dàn Nhị Hợp"] + [f"K{k}" for k in range(1,11)]
+    col_styles = {
+        0:"color:#c0392b;font-weight:700;text-align:center",
+        1:"color:#7f8c8d",
+        2:"background:#fef9e7;color:#e67e22;font-weight:700",
+        3:"background:#eaf2ff;color:#2471a3;font-size:12px",
+    }
+
+    rows = []
+    for i, curr in enumerate(proc):
+        dan_disp = (" ".join(curr["dan"][:25])+"..." if len(curr["dan"])>25 else " ".join(curr["dan"]))
+        row = [
+            curr["ky"], curr["dt"],
+            ",".join(curr["l0"]) if curr["l0"] else "",
+            dan_disp if curr["show"] else "",
+        ]
+        cur = curr["dan"][:]
+        for k in range(1,11):
+            t = i-k
+            if t<0 or not curr["show"]:
+                row.append("")
+            else:
+                cur = sorted(set(cur)-set(proc[t]["res"]))
+                row.append(" ".join(cur) if cur else "<span style='color:#27ae60;font-weight:700'>✅</span>")
+        rows.append(row)
+
+    st.markdown(html_table(headers, rows, col_styles), unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════
+# TAB 4 — LÔ XIÊN
+# ══════════════════════════════════════════════════
+def tab_lo_xien():
+    st.markdown("### 🔢 Ghép Xiên Tự Động")
+    cols = st.columns(4)
+    groups = []
+    for i,col in enumerate(cols,1):
+        with col:
+            st.markdown(f"**Nhóm {i}**")
+            txt = st.text_area("", height=100, key=f"xg{i}",
+                               placeholder="Nhập số,\ncách bởi dấu cách/phẩy",
+                               label_visibility="collapsed")
+            groups.append(sorted(set(n.strip() for n in txt.replace(","," ").split() if n.strip().isdigit())))
+
+    oc1,oc2,oc3,oc4 = st.columns([2,1,1,1])
+    sep = oc1.selectbox("Ký tự nối",["&",",","-"," "],key="xsep")
+    x2  = oc2.checkbox("Xiên 2",True, key="xx2")
+    x3  = oc3.checkbox("Xiên 3",True, key="xx3")
+    x4  = oc4.checkbox("Xiên 4",True, key="xx4")
+
+    bc1,bc2 = st.columns(2)
+    quay = bc1.button("🔄 Tạo Xiên Quay (Nhóm 1)", use_container_width=True)
+    nhom = bc2.button("🔗 Tạo Xiên Nhóm",          use_container_width=True)
+
+    if quay:
+        if len(groups[0])<2: st.warning("Nhập ít nhất 2 số ở Nhóm 1!")
+        else:
+            rc = st.columns(3)
+            for idx,(k,use) in enumerate([(2,x2),(3,x3),(4,x4)]):
+                if use:
+                    combos = list(itertools.combinations(groups[0],k))
+                    rc[idx].text_area(f"Xiên {k} — {len(combos)} cặp",
+                                      ";\n".join(sep.join(c) for c in combos),
+                                      height=200, key=f"qr{k}")
+    if nhom:
+        rc = st.columns(3)
+        for idx,(k,use) in enumerate([(2,x2),(3,x3),(4,x4)]):
+            if use:
+                src = groups[:k]
+                if all(src):
+                    res = list(itertools.product(*src))
+                    rc[idx].text_area(f"Xiên {k} — {len(res)} cặp",
+                                      ";\n".join(sep.join(c) for c in res),
+                                      height=200, key=f"nr{k}")
+                else:
+                    st.warning(f"Cần nhập đủ {k} nhóm!")
+
+# ══════════════════════════════════════════════════
+# TAB 5 — TÀI / XỈU
+# ══════════════════════════════════════════════════
+def bead_road_html(seq):
+    ROWS,CS,PAD = 6,32,6
+    col,row,prev = 0,0,None
+    cells=[]
+    for d in seq:
+        r = d["r"]
+        if prev is not None and (r!=prev or row>=ROWS):
+            col+=1; row=0
+        cx = PAD+col*(CS+3)+CS//2
+        cy = PAD+row*(CS+3)+CS//2
+        cells.append((cx,cy,"#c0392b" if r=="T" else "#2471a3",r,d["total"]))
+        prev=r; row+=1
+
+    W = PAD+(col+1)*(CS+3)+PAD
+    H = PAD+ROWS*(CS+3)+PAD
+    svgs=""
+    for cx,cy,color,lbl,tot in cells:
+        svgs += (f'<circle cx="{cx}" cy="{cy}" r="{CS//2-1}" fill="{color}" stroke="white" stroke-width="1.5"/>'
+                 f'<text x="{cx}" y="{cy+5}" text-anchor="middle" fill="white" '
+                 f'font-size="13" font-weight="bold" font-family="Arial">{lbl}</text>'
+                 f'<text x="{cx+CS//2-1}" y="{cy+CS//2-1}" text-anchor="end" '
+                 f'fill="rgba(255,255,255,0.6)" font-size="7">{tot}</text>')
+    return (f'<div style="overflow-x:auto;background:#1a2c3d;border-radius:10px;padding:4px">'
+            f'<svg width="{W}" height="{H}" xmlns="http://www.w3.org/2000/svg">'
+            f'<rect width="{W}" height="{H}" fill="#1a2c3d"/>{svgs}</svg></div>')
+
+def tab_tai_xiu(raw):
+    if not raw:
+        st.info("Chọn đài và nhấn **Tải Dữ Liệu**")
+        return
+
+    seq = []
+    for item in reversed(raw):
+        p = pf(item)
+        gdb = p[0].strip() if p else ""
+        total = sum(int(c) for c in gdb if c.isdigit())
+        seq.append({"turn":ky(item),"gdb":gdb,"total":total,"r":"T" if total>=23 else "X"})
+
+    tot_t = sum(1 for d in seq if d["r"]=="T")
+    tot_x = len(seq)-tot_t
+    last  = seq[-1]["r"]
+    streak=1
+    for d in reversed(seq[:-1]):
+        if d["r"]==last: streak+=1
+        else: break
+
+    m1,m2,m3,m4 = st.columns(4)
+    m1.metric("Tổng kỳ",  len(seq))
+    m2.metric("🔴 Tài",   f"{tot_t} ({tot_t/len(seq)*100:.0f}%)")
+    m3.metric("🔵 Xỉu",   f"{tot_x} ({tot_x/len(seq)*100:.0f}%)")
+    m4.metric("Chuỗi",    f"{streak} {'Tài 🔴' if last=='T' else 'Xỉu 🔵'}")
+
+    l = seq[-1]
+    tx = "**TÀI 🔴**" if l["r"]=="T" else "**XỈU 🔵**"
+    st.info(f"Kỳ mới nhất: **{l['turn']}** &nbsp;·&nbsp; GĐB: **{l['gdb']}** &nbsp;·&nbsp; Tổng chữ số: **{l['total']}** &nbsp;→&nbsp; {tx}")
+
+    st.markdown("#### 🎱 Bead Road")
+    st.markdown(bead_road_html(seq), unsafe_allow_html=True)
+
+    st.markdown("#### 📋 20 Kỳ Gần Nhất")
+    recent = seq[-20:]
+    table_rows = []
+    for i,d in enumerate(recent):
+        s=1
+        for j in range(i-1,-1,-1):
+            if recent[j]["r"]==d["r"]: s+=1
+            else: break
+        color = "#c0392b" if d["r"]=="T" else "#2471a3"
+        bg    = "#fff0f0" if d["r"]=="T" else "#f0f5ff"
+        table_rows.append([
+            d["turn"], d["gdb"], str(d["total"]),
+            f'<span style="color:{color};font-weight:700">{"TÀI 🔴" if d["r"]=="T" else "XỈU 🔵"}</span>',
+            f"{s} {'Tài' if d['r']=='T' else 'Xỉu'} liên tiếp",
+        ])
+    st.markdown(
+        html_table(["Kỳ","GĐB","Tổng","Kết quả","Chuỗi"], list(reversed(table_rows)),
+                   {0:"font-weight:700;color:#555;text-align:center",
+                    1:"font-family:Consolas;font-size:14px",
+                    2:"text-align:center;font-weight:700"}),
+        unsafe_allow_html=True
     )
 
+# ══════════════════════════════════════════════════
+# MAIN
+# ══════════════════════════════════════════════════
+def main():
+    st.set_page_config(page_title="Phân Tích Xổ Số", page_icon="🎲",
+                       layout="wide", initial_sidebar_state="expanded")
+
+    # Minimal CSS — chỉ fix những thứ cần thiết, không override màu chữ
     st.markdown("""
     <style>
-    .stApp { background-color: #f8f9fa; }
-    .block-container { padding-top: 1rem; }
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-    .stTabs [data-baseweb="tab"] { 
-        background: #eef0f3; border-radius: 6px 6px 0 0;
-        padding: 8px 16px; font-weight: 600;
+    .block-container { padding-top: 0.5rem !important; max-width: 100% !important; }
+    .stButton > button {
+        background: #c0392b !important; color: #fff !important;
+        font-weight: 700; border: none; border-radius: 6px;
+        padding: 8px 20px; font-size: 14px;
     }
-    .stTabs [aria-selected="true"] { background: #ff4b4b; color: white; }
+    .stButton > button:hover { background: #a93226 !important; }
+    .stTabs [data-baseweb="tab-list"] { gap: 4px; }
+    .stTabs [data-baseweb="tab"] {
+        background: #f0f2f6; border-radius: 6px 6px 0 0;
+        font-weight: 600; font-size: 13px; padding: 6px 14px;
+    }
+    .stTabs [aria-selected="true"] {
+        background: #c0392b !important; color: #fff !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-    st.title("🎲 Phân Tích Xổ Số - Pro Version")
-
-    # ── Sidebar Controls ──
+    # ── Sidebar ──
     with st.sidebar:
         st.header("⚙️ Cấu Hình")
-        region = st.selectbox("Khu vực", ["Miền Bắc", "Miền Nam", "Miền Trung"], key="region")
-        today_day = get_current_day_vietnamese()
-        day = st.selectbox("Thứ", DAYS_VI, index=DAYS_VI.index(today_day), key="day")
-
-        stations = get_station_list(region, day)
-        if stations:
-            station = st.selectbox("Đài", stations, key="station")
-        else:
-            st.warning(f"Không có lịch quay {region} {day}")
-            station = None
-
-        show_g4g7 = st.checkbox("Hiện G4-G7 trong kết quả", value=False)
-        load_btn = st.button("📡 Tải Dữ Liệu", type="primary", use_container_width=True)
-
+        region  = st.selectbox("Khu vực", ["Miền Bắc","Miền Nam","Miền Trung"])
+        today   = DAYS_VI[datetime.now().weekday()]
+        day     = st.selectbox("Thứ", DAYS_VI, index=DAYS_VI.index(today))
+        sl      = stations(region, day)
+        station = st.selectbox("Đài", sl) if sl else None
+        show_g47= st.checkbox("Hiện G4-G7 trong kết quả", False)
         st.divider()
-        st.caption("Nguồn dữ liệu: kqxs88.live")
+        load    = st.button("📡 Tải Dữ Liệu", use_container_width=True)
+        st.caption("Nguồn: kqxs88.live")
 
-    # ── State management ──
-    if "raw_data" not in st.session_state:
-        st.session_state.raw_data = []
-    if "current_station" not in st.session_state:
-        st.session_state.current_station = None
+    if "raw"   not in st.session_state: st.session_state.raw = []
+    if "name"  not in st.session_state: st.session_state.name = ""
 
-    if load_btn and station:
-        data = fetch_data(station)
-        st.session_state.raw_data = data
-        st.session_state.current_station = station
-        if data:
-            st.success(f"✅ Đã tải {len(data)} kỳ từ **{station}**")
-        else:
-            st.error("Không tải được dữ liệu!")
+    if load and station:
+        with st.spinner(f"Đang tải {station}..."):
+            data = load_data(station)
+        st.session_state.raw  = data
+        st.session_state.name = station
+        if data: st.success(f"✅ Đã tải **{len(data)} kỳ** từ **{station}**")
+        else:    st.error("Không tải được dữ liệu!")
 
-    raw_data = st.session_state.raw_data
+    raw = st.session_state.raw
+    left, right = st.columns([3,1])
 
-    # ── Layout: Left (tabs) + Right (results) ──
-    main_col, result_col = st.columns([3, 1])
+    with right:
+        st.markdown(f"### 📋 Kết Quả{' — ' + st.session_state.name if st.session_state.name else ''}")
+        result_panel(raw, show_g47)
 
-    with result_col:
-        render_result_panel(raw_data, show_g4g7)
-
-    with main_col:
-        if raw_data:
-            st.caption(f"📡 Đang xem: **{st.session_state.current_station}** — {len(raw_data)} kỳ")
-
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "Cầu List 0",
-            "Thiếu Đầu & Chạm Tổng",
-            "Lô Lạ (Pattern)",
+    with left:
+        if raw:
+            st.caption(f"📡 **{st.session_state.name}** · {len(raw)} kỳ")
+        t1,t2,t3,t4,t5 = st.tabs([
+            "📋 Cầu List 0",
+            "📉 Thiếu Đầu & Chạm Tổng",
+            "🔮 Lô Lạ (Pattern)",
             "🔢 Lô Xiên",
             "🎲 Tài / Xỉu",
         ])
+        with t1: tab_list0(raw)
+        with t2: tab_thieu_dau(raw)
+        with t3: tab_lo_la(raw, region)
+        with t4: tab_lo_xien()
+        with t5: tab_tai_xiu(raw)
 
-        with tab1:
-            render_tab1(raw_data)
-
-        with tab2:
-            render_tab2(raw_data)
-
-        with tab3:
-            render_tab3(raw_data, region)
-
-        with tab4:
-            render_tab5_loxien()
-
-        with tab5:
-            render_tab_taixiu(raw_data)
-
-
-if __name__ == "__main__":
+if __name__=="__main__":
     main()
