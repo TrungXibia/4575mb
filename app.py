@@ -159,25 +159,26 @@ def ngay(item): return str(item.get("openTime","") or "").split(" ")[0]
 
 # ═══════════════════════════ HTML TABLE ═══════════════════════════
 def htable(headers, rows, col_css=None, fs=13):
-    TH = (f"background:#34495e;color:#fff;padding:8px 12px;"
-          f"font-size:{fs}px;white-space:nowrap;border:1px solid #2c3e50;"
-          f"position:sticky;top:0")
-    def td_s(ci):
-        base = f"padding:6px 10px;font-size:{fs}px;border:1px solid #ecf0f1;white-space:nowrap"
+    TH = (f"background:#2c3e50;color:#fff;padding:8px 12px;"
+          f"font-size:{fs}px;white-space:nowrap;border:1px solid #1a252f;")
+    def td_s(ci, ri):
+        # Màu nền xen kẽ
+        bg = "#f5f7fa" if ri % 2 else "#ffffff"
+        base = (f"padding:7px 11px;font-size:{fs}px;border:1px solid #e8ecf0;"
+                f"white-space:nowrap;background:{bg};color:#2c3e50")
         ex = (col_css or {}).get(ci, (col_css or {}).get(
             headers[ci] if ci < len(headers) else "", ""))
         return base + (";" + ex if ex else "")
     ths = "".join(f'<th style="{TH}">{h}</th>' for h in headers)
     trs = ""
     for ri, row in enumerate(rows):
-        bg = "#f8f9fa" if ri % 2 else "#ffffff"
-        tds = "".join(f'<td style="{td_s(ci)}">{c if c is not None else ""}</td>'
+        tds = "".join(f'<td style="{td_s(ci,ri)}">{c if c is not None else ""}</td>'
                       for ci, c in enumerate(row))
-        trs += f'<tr style="background:{bg}">{tds}</tr>'
-    return (f'<div style="overflow:auto;max-height:620px;border-radius:8px;'
+        trs += f'<tr>{tds}</tr>'
+    return (f'<div style="overflow:auto;max-height:640px;border-radius:8px;'
             f'box-shadow:0 2px 8px rgba(0,0,0,.12);margin:6px 0">'
             f'<table style="border-collapse:collapse;width:100%;background:#fff">'
-            f'<thead style="position:sticky;top:0;z-index:1"><tr>{ths}</tr></thead>'
+            f'<thead style="position:sticky;top:0;z-index:2"><tr>{ths}</tr></thead>'
             f'<tbody>{trs}</tbody></table></div>')
 
 # ═══════════════════════════ KẾT QUẢ PANEL ═══════════════════════════
@@ -352,35 +353,45 @@ def tab_thieu_dau(raw):
              "mh": miss_heads(get_prizes(i)),
              "pf": get_prizes(i)} for i in raw]
 
-    headers = ["Kỳ","Ngày","Thiếu Đầu","Dàn Chạm+Tổng",
-               "K1","K2","K3","K4","K5","K6","K7"]
-    ccs = {
+    # ── Bảng chính: Kỳ + Thiếu Đầu + Dàn ──
+    headers_main = ["Kỳ","Ngày","Thiếu Đầu","Dàn Chạm+Tổng"]
+    ccs_main = {
         0: "color:#c0392b;font-weight:700;text-align:center",
         1: "color:#7f8c8d;text-align:center",
-        2: "background:#fff8e1;color:#d35400;font-weight:700;text-align:center",
-        3: "background:#eaf2ff;color:#1a5276;font-size:12px",
+        2: "background:#fff3cd;color:#7d4e00;font-weight:700;text-align:center",
+        3: "background:#dbeafe;color:#1e40af;font-size:12px;font-family:Consolas",
     }
-    for k in range(4, 11): ccs[k] = "background:#eafaf1;color:#1e8449;font-size:12px"
+    headers_k = ["Kỳ","Ngày","K1","K2","K3","K4","K5","K6","K7"]
+    ccs_k = {
+        0: "color:#c0392b;font-weight:700;text-align:center",
+        1: "color:#7f8c8d;text-align:center",
+    }
+    for k in range(2, 9): ccs_k[k] = "background:#ecfdf5;color:#065f46;font-size:12px;font-family:Consolas"
 
-    rows = []
+    rows_main, rows_k = [], []
     for i, curr in enumerate(proc):
         dan = cham_tong(curr["mh"])
-        row = [curr["ky"], curr["ngay"],
-               " ".join(curr["mh"]) if curr["mh"] else "—",
-               " ".join(dan) if dan else "—"]
+        rows_main.append([
+            curr["ky"], curr["ngay"],
+            " ".join(curr["mh"]) if curr["mh"] else "—",
+            " ".join(dan) if dan else "—",
+        ])
+        row_k = [curr["ky"], curr["ngay"]]
         for k in range(1, 8):
             t = i - k
             if t < 0:
-                row.append("")
+                row_k.append("")
             else:
                 hits = set(dan) & targets(proc[t]["pf"])
                 if hits:
-                    row.append(f'<b style="color:#27ae60">✅ {",".join(sorted(hits))}</b>')
+                    row_k.append(f'<b style="color:#059669;font-size:13px">✅ {",".join(sorted(hits))}</b>')
                 else:
-                    row.append('<span style="color:#bbb">—</span>')
-        rows.append(row)
+                    row_k.append('<span style="color:#ccc">—</span>')
+        rows_k.append(row_k)
 
-    st.markdown(htable(headers, rows, ccs), unsafe_allow_html=True)
+    st.markdown(htable(headers_main, rows_main, ccs_main), unsafe_allow_html=True)
+    with st.expander("📊 Xem K1 → K7 (kết quả trúng theo kỳ)"):
+        st.markdown(htable(headers_k, rows_k, ccs_k), unsafe_allow_html=True)
 
 # ═══════════════════════════ TAB CẦU LIST 0 ═══════════════════════════
 def tab_list0(raw):
@@ -403,40 +414,47 @@ def tab_list0(raw):
                      "l0": get_list0(p, selected) if selected else get_list0(p),
                      "res": get_2d(p)})
 
-    headers = ["Kỳ","Ngày","List 0","Kỳ-1","Kỳ-2",
-               "Sót K0","K1","K2","K3","K4","K5","K6","K7"]
-    ccs = {
+    headers_main = ["Kỳ","Ngày","List 0 (Thiếu)","Kỳ-1","Kỳ-2","Sót K0"]
+    ccs_main = {
         0: "color:#c0392b;font-weight:700;text-align:center",
         1: "color:#7f8c8d;text-align:center",
-        2: "background:#fff8e1;color:#d35400;font-weight:700;text-align:center",
-        3: "color:#b7950b;text-align:center",
-        4: "color:#b7950b;text-align:center",
-        5: "background:#eaf2ff;color:#1a5276;font-weight:700",
+        2: "background:#fff3cd;color:#7d4e00;font-weight:700;text-align:center",
+        3: "color:#856404;text-align:center",
+        4: "color:#856404;text-align:center",
+        5: "background:#dbeafe;color:#1e40af;font-weight:700;font-family:Consolas;font-size:12px",
     }
-    for k in range(6, 13): ccs[k] = "background:#eafaf1;color:#1e8449;font-size:12px"
+    headers_k = ["Kỳ","Ngày","K1","K2","K3","K4","K5","K6","K7"]
+    ccs_k = {
+        0: "color:#c0392b;font-weight:700;text-align:center",
+        1: "color:#7f8c8d;text-align:center",
+    }
+    for k in range(2,9): ccs_k[k] = "background:#ecfdf5;color:#065f46;font-size:12px;font-family:Consolas"
 
-    rows = []
+    rows_main, rows_k = [], []
     for i, curr in enumerate(proc):
         k0 = bridge(curr["l0"], proc[i+1]["l0"]) if i+1 < len(proc) else []
         k0 = diff(k0, curr["res"])
-        row = [
+        rows_main.append([
             curr["ky"], curr["ngay"],
             " ".join(curr["l0"]) if curr["l0"] else "—",
             " ".join(proc[i-1]["l0"]) if i >= 1 else "",
             " ".join(proc[i-2]["l0"]) if i >= 2 else "",
             " ".join(k0) if k0 else "—",
-        ]
+        ])
+        row_k = [curr["ky"], curr["ngay"]]
         cur = k0[:]
         for k in range(1, 8):
             t = i - k
-            if t < 0: row.append("")
+            if t < 0: row_k.append("")
             else:
                 cur = diff(cur, proc[t]["res"])
-                row.append(" ".join(cur) if cur
-                           else '<b style="color:#27ae60">✅</b>')
-        rows.append(row)
+                row_k.append(" ".join(cur) if cur
+                             else '<b style="color:#059669">✅</b>')
+        rows_k.append(row_k)
 
-    st.markdown(htable(headers, rows, ccs), unsafe_allow_html=True)
+    st.markdown(htable(headers_main, rows_main, ccs_main), unsafe_allow_html=True)
+    with st.expander("📊 Xem K1 → K7 (sót qua từng kỳ)"):
+        st.markdown(htable(headers_k, rows_k, ccs_k), unsafe_allow_html=True)
 
 # ═══════════════════════════ TAB LÔ LẠ ═══════════════════════════
 def _detect(prize, use_s, use_l, use_g, use_c):
@@ -485,34 +503,43 @@ def tab_lo_la(raw, region):
         proc.append({"ky": ky(item), "ngay": ngay(item),
                      "l0": l0, "dan": dan, "res": td, "show": show})
 
-    headers = ["Kỳ","Ngày","List 0 Lạ","Dàn Nhị Hợp",
-               "K1","K2","K3","K4","K5","K6","K7","K8","K9","K10"]
-    ccs = {
+    headers_main = ["Kỳ","Ngày","List 0 Lạ","Dàn Nhị Hợp"]
+    ccs_main = {
         0: "color:#c0392b;font-weight:700;text-align:center",
         1: "color:#7f8c8d;text-align:center",
-        2: "background:#fef9e7;color:#d35400;font-weight:700;text-align:center",
-        3: "background:#eaf2ff;color:#1a5276;font-size:12px",
+        2: "background:#fff3cd;color:#7d4e00;font-weight:700;text-align:center",
+        3: "background:#dbeafe;color:#1e40af;font-size:12px;font-family:Consolas",
     }
-    for k in range(4, 14): ccs[k] = "background:#eafaf1;color:#1e8449;font-size:12px"
+    headers_k = ["Kỳ","Ngày"] + [f"K{k}" for k in range(1,11)]
+    ccs_k = {
+        0: "color:#c0392b;font-weight:700;text-align:center",
+        1: "color:#7f8c8d;text-align:center",
+    }
+    for k in range(2,12): ccs_k[k] = "background:#ecfdf5;color:#065f46;font-size:12px;font-family:Consolas"
 
-    rows = []
+    rows_main, rows_k = [], []
     for i, curr in enumerate(proc):
         dan_disp = (" ".join(curr["dan"][:25]) + ("…" if len(curr["dan"]) > 25 else "")
                    if curr["show"] else "")
-        row = [curr["ky"], curr["ngay"],
-               ",".join(curr["l0"]) if curr["l0"] else "",
-               dan_disp]
+        rows_main.append([
+            curr["ky"], curr["ngay"],
+            ",".join(curr["l0"]) if curr["l0"] else "",
+            dan_disp,
+        ])
+        row_k = [curr["ky"], curr["ngay"]]
         cur = curr["dan"][:]
         for k in range(1, 11):
             t = i - k
-            if t < 0 or not curr["show"]: row.append("")
+            if t < 0 or not curr["show"]: row_k.append("")
             else:
                 cur = diff(cur, proc[t]["res"])
-                row.append(" ".join(cur) if cur
-                           else '<b style="color:#27ae60">✅</b>')
-        rows.append(row)
+                row_k.append(" ".join(cur) if cur
+                             else '<b style="color:#059669">✅</b>')
+        rows_k.append(row_k)
 
-    st.markdown(htable(headers, rows, ccs), unsafe_allow_html=True)
+    st.markdown(htable(headers_main, rows_main, ccs_main), unsafe_allow_html=True)
+    with st.expander("📊 Xem K1 → K10 (sót qua từng kỳ)"):
+        st.markdown(htable(headers_k, rows_k, ccs_k), unsafe_allow_html=True)
 
 # ═══════════════════════════ TAB LÔ XIÊN ═══════════════════════════
 def tab_lo_xien(raw):
@@ -810,35 +837,53 @@ def tab_anh_xa(raw):
         "Đầu nhiều", "Top5 Đầu",
         "Đuôi nhiều", "Top5 Đuôi",
     ]
-    ccs = {
-        0: "text-align:center",
-        1: "color:#7f8c8d;text-align:center",
-        2: "background:#fff3e0;text-align:center;font-size:16px",
-        3: "background:#fff3e0;text-align:center;font-weight:700;color:#e67e22",
-        4: "background:#fef9e7;font-size:13px",
-        5: "color:#7f8c8d;font-size:11px",
-        6: "background:#fff3e0;text-align:center",
-        7: "background:#fff8e1;font-size:13px",
-        8: "background:#e8f5e9;text-align:center",
-        9: "background:#e8f8f5;font-size:13px",
-    }
-
-    # Highlight row 0 (kỳ mới nhất)
+    # Banner kỳ mới nhất
     if rows:
-        r0 = rows[0]
         kq_html = (
-            f'<div style="background:#e3f2fd;border:2px solid #2471a3;border-radius:8px;'
-            f'padding:10px;margin-bottom:10px;font-size:14px">'
-            f'<b style="color:#2471a3;font-size:15px">🔮 Kỳ mới nhất — Dự đoán từ ánh xạ:</b><br>'
-            f'&nbsp;&nbsp;GĐB <b style="color:#c0392b;font-family:Consolas;font-size:16px">{rows[0][2]}</b>'
-            f' &nbsp;·&nbsp; CS: <b>{rows[0][3]}</b>'
-            f' &nbsp;·&nbsp; Top5 GĐB: {rows[0][4]}'
-            f'<br>&nbsp;&nbsp;Top Đầu: {rows[0][6]} → ánh xạ: {rows[0][7]}'
-            f' &nbsp;·&nbsp; Top Đuôi: {rows[0][8]} → ánh xạ: {rows[0][9]}'
-            f'</div>')
+            f'<div style="background:#eff6ff;border:2px solid #3b82f6;border-radius:8px;'
+            f'padding:12px;margin-bottom:12px">'
+            f'<div style="font-weight:700;color:#1d4ed8;font-size:15px;margin-bottom:8px">'
+            f'🔮 Kỳ mới nhất — Dự đoán từ ánh xạ</div>'
+            f'<div style="display:flex;gap:20px;flex-wrap:wrap">'
+            f'<div><span style="color:#6b7280;font-size:12px">GĐB</span><br>'
+            f'<b style="color:#c0392b;font-family:Consolas;font-size:20px">{rows[0][2]}</b></div>'
+            f'<div><span style="color:#6b7280;font-size:12px">Chữ số GĐB</span><br>'
+            f'<b style="color:#d97706;font-size:16px">{rows[0][3]}</b></div>'
+            f'<div><span style="color:#6b7280;font-size:12px">Top5 ánh xạ GĐB</span><br>'
+            f'<b style="font-size:15px">{rows[0][4]}</b></div>'
+            f'<div><span style="color:#6b7280;font-size:12px">Đầu nhiều → Top5</span><br>'
+            f'<b style="color:#ea580c">{rows[0][6]}</b> → <b style="color:#059669">{rows[0][7]}</b></div>'
+            f'<div><span style="color:#6b7280;font-size:12px">Đuôi nhiều → Top5</span><br>'
+            f'<b style="color:#7c3aed">{rows[0][8]}</b> → <b style="color:#059669">{rows[0][9]}</b></div>'
+            f'</div></div>')
         st.markdown(kq_html, unsafe_allow_html=True)
 
-    st.markdown(htable(headers, rows, ccs), unsafe_allow_html=True)
+    # Bảng tóm tắt (không có cột dài)
+    headers_sum = ["Kỳ","Ngày","GĐB","CS GĐB","Top5 GĐB","Đầu nhiều","Đuôi nhiều"]
+    ccs_sum = {
+        0: "color:#dc2626;font-weight:700;text-align:center",
+        1: "color:#6b7280;text-align:center",
+        2: "background:#fff7ed;color:#c0392b;font-weight:700;font-family:Consolas;font-size:16px;text-align:center",
+        3: "background:#fff7ed;color:#d97706;font-weight:700;text-align:center",
+        4: "background:#f0fdf4;color:#166534;font-weight:700",
+        5: "background:#fff7ed;color:#c2410c;font-weight:700;text-align:center",
+        6: "background:#f5f3ff;color:#6d28d9;font-weight:700;text-align:center",
+    }
+    rows_sum = [[r[0],r[1],r[2],r[3],r[4],r[6],r[8]] for r in rows]
+    st.markdown(htable(headers_sum, rows_sum, ccs_sum), unsafe_allow_html=True)
+
+    # Chi tiết đầy đủ
+    with st.expander("📊 Xem chi tiết Top5 Đầu / Đuôi + Toàn bộ tần suất"):
+        headers_full = ["Kỳ","GĐB","Toàn bộ GĐB","Top5 Đầu","Top5 Đuôi"]
+        ccs_full = {
+            0: "color:#dc2626;font-weight:700;text-align:center",
+            1: "font-family:Consolas;font-size:15px;font-weight:700;color:#c0392b;text-align:center",
+            2: "color:#374151;font-size:11px",
+            3: "background:#fff7ed;color:#059669;font-weight:700",
+            4: "background:#f5f3ff;color:#059669;font-weight:700",
+        }
+        rows_full = [[r[0],r[2],r[5],r[7],r[9]] for r in rows]
+        st.markdown(htable(headers_full, rows_full, ccs_full), unsafe_allow_html=True)
 
 # ═══════════════════════════ MAIN ═══════════════════════════
 def main():
