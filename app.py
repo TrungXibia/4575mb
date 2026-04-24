@@ -95,25 +95,83 @@ def http_get_issue_list(url: str) -> list:
 
 _detail_cache = {}
 
+def _debug_item_keys(item: dict) -> str:
+    """Trả về thông tin debug field của item"""
+    keys = list(item.keys())
+    preview = {}
+    for k in keys:
+        v = item[k]
+        preview[k] = str(v)[:80] if v else "(empty)"
+    return preview
+
 def parse_detail(item: dict) -> list:
-    detail_str = item.get("detail", "")
-    if detail_str not in _detail_cache:
+    """
+    Hỗ trợ nhiều format API:
+    - detail: JSON string dạng list  →  list of strings
+    - detail: list                   →  dùng trực tiếp
+    - openCode / prizeNum: "x,x|x,x" → split by |
+    """
+    # 1. Thử field 'detail'
+    raw = item.get("detail", "")
+
+    # Nếu đã là list
+    if isinstance(raw, list):
+        return [str(x) for x in raw]
+
+    cache_key = str(id(item)) + str(raw)[:50]
+    if cache_key in _detail_cache:
+        return _detail_cache[cache_key]
+
+    result = []
+
+    if raw and str(raw).strip():
+        raw_str = str(raw).strip()
         try:
-            _detail_cache[detail_str] = json.loads(detail_str)
+            parsed = json.loads(raw_str)
+            if isinstance(parsed, list):
+                result = [str(x) for x in parsed]
+            elif isinstance(parsed, dict):
+                result = [str(v) for v in parsed.values()]
         except Exception:
-            _detail_cache[detail_str] = []
-        if len(_detail_cache) > 500:
-            keys = list(_detail_cache.keys())
-            for k in keys[:200]:
-                del _detail_cache[k]
-    return _detail_cache[detail_str]
+            # Thử split bằng "|" (format openCode)
+            if "|" in raw_str:
+                result = [part.strip() for part in raw_str.split("|")]
+            elif raw_str:
+                result = [raw_str]
+
+    # 2. Fallback: thử các field phổ biến khác
+    if not result:
+        for field_name in ("openCode", "prizeNum", "number", "code"):
+            val = item.get(field_name, "")
+            if val and str(val).strip():
+                val_str = str(val).strip()
+                if "|" in val_str:
+                    result = [part.strip() for part in val_str.split("|")]
+                elif "," in val_str:
+                    result = [val_str]
+                else:
+                    result = [val_str]
+                break
+
+    if len(_detail_cache) > 500:
+        keys = list(_detail_cache.keys())
+        for k in keys[:200]:
+            del _detail_cache[k]
+    _detail_cache[cache_key] = result
+    return result
 
 def get_prizes_flat(item: dict) -> list:
     try:
         detail = parse_detail(item)
         prizes_flat = []
         for field in detail:
-            prizes_flat += field.split(",")
+            if isinstance(field, str):
+                parts = [x.strip() for x in field.split(",") if x.strip()]
+                prizes_flat += parts
+            else:
+                s = str(field).strip()
+                if s:
+                    prizes_flat.append(s)
         return prizes_flat
     except Exception:
         return []
@@ -279,8 +337,14 @@ def render_tab1(raw_data):
         prizes_flat = get_prizes_flat(item)
         two_digits = get_two_digit_numbers(prizes_flat)
         list0 = get_list0(prizes_flat)
+        # Lấy ngày từ openTime hoặc turnNum
+        open_time = item.get("openTime", "")
+        date_str = open_time.split(" ")[0] if open_time and " " in open_time else open_time
+        ky_str = item.get("turnNum", "")
+        # Nếu turnNum là chuỗi ngày thì dùng index
         processed.append({
-            "ky": item.get("turnNum", ""),
+            "ky": ky_str,
+            "date": date_str,
             "list0": list0,
             "res": two_digits,
         })
@@ -298,6 +362,7 @@ def render_tab1(raw_data):
 
         row = {
             "Kỳ": curr["ky"],
+            "Ngày": curr.get("date", ""),
             "List 0": " ".join(curr["list0"]),
             "Sót K0": " ".join(current_dan),
         }
@@ -314,6 +379,17 @@ def render_tab1(raw_data):
     import pandas as pd
     df = pd.DataFrame(rows)
 
+    # ── Debug: xem cấu trúc API ──
+    with st.expander("🔍 Debug: Xem cấu trúc dữ liệu API (click để mở)"):
+        if raw_data:
+            item0 = raw_data[0]
+            st.write("**Keys của item:**", list(item0.keys()))
+            for k, v in item0.items():
+                st.write(f"`{k}` →", str(v)[:200])
+            st.write("---")
+            st.write("**prizes_flat mẫu (item[0]):**", get_prizes_flat(item0)[:10])
+            st.write("**list0 mẫu:**", get_list0(get_prizes_flat(item0)))
+
     st.markdown("### 📊 Cầu List 0 (Truyền Thống)")
 
     def highlight_dan(val):
@@ -326,8 +402,9 @@ def render_tab1(raw_data):
 
     styled = df.style\
         .map(highlight_ky, subset=["Kỳ"])\
-        .map(lambda v: "background-color: #fff8e1; color: #f57c00;", subset=["List 0"])\
-        .map(lambda v: "background-color: #e1f5fe; color: #0277bd;", subset=["Sót K0"])
+        .map(lambda v: "background-color: #fafafa; color: #555;", subset=["Ngày"])\
+        .map(lambda v: "background-color: #fff8e1; color: #f57c00; font-weight:bold;" if v else "", subset=["List 0"])\
+        .map(lambda v: "background-color: #e1f5fe; color: #0277bd; font-weight:bold;" if v else "", subset=["Sót K0"])
 
     st.dataframe(styled, use_container_width=True, height=600)
 
