@@ -735,24 +735,30 @@ def tab_debug(raw):
 # ═══════════════════════════ ÁNH XẠ GĐB ═══════════════════════════
 
 def _get_top_heads_tails(item, top_n=2):
-    """Top đầu/đuôi xuất hiện nhiều nhất (≥4 lô). Nếu không đủ lấy top 1."""
+    """
+    Top đầu/đuôi theo tần suất thực, sort cao→thấp.
+    Lấy top_n, nếu có tie ở vị trí top_n thì lấy hết cùng mức.
+    Không dùng ngưỡng cứng — nhất quán với bảng hiển thị panel.
+    """
     prizes = get_prizes(item)
     heads, tails = [], []
     for p in prizes:
         if len(p) >= 2 and p[-2:].isdigit():
             heads.append(p[-2])
             tails.append(p[-1])
-    def top_ties(lst, n, min_c=4):
+
+    def top_by_freq(lst, n):
         if not lst: return []
         cnt = Counter(lst)
-        qualified = sorted([(d,c) for d,c in cnt.items() if c>=min_c], key=lambda x:(-x[1],x[0]))
-        if not qualified:
-            best = max(cnt.items(), key=lambda x:(-x[1],x[0]))
-            return [best[0]]
-        if len(qualified) <= n: return [d for d,_ in qualified]
-        threshold = qualified[n-1][1]
-        return [d for d,c in qualified if c>=threshold]
-    return top_ties(heads, top_n), top_ties(tails, top_n)
+        # Sort: tần suất cao → thấp, tie → chữ số nhỏ trước
+        ranked = sorted(cnt.items(), key=lambda x: (-x[1], x[0]))
+        if len(ranked) <= n:
+            return [d for d,_ in ranked]
+        # Lấy đúng top n, kèm tie-breaking tại vị trí n
+        threshold = ranked[n-1][1]
+        return [d for d,c in ranked if c >= threshold]
+
+    return top_by_freq(heads, top_n), top_by_freq(tails, top_n)
 
 def _position_map(curr_detail, prev_detail, target_digits):
     """
